@@ -1,23 +1,16 @@
 {
   "compilerOptions": {
-
- 
-    "target": "es2016",                                  
-   
-    "module": "commonjs",                               
-    "moduleResolution": "node",                      
-   
-    "rootDirs": ["./src"],                                   
-    "typeRoots": ["./src/types", "./node_modules/@types"],                    
-    "types": [], 
-    "outDir": "./build",                                   
-   
-    "esModuleInterop": true,                            
-    "forceConsistentCasingInFileNames": true,           
-
-    "strict": true,                                 
-    "noImplicitAny": false,                          
-   
-    "skipLibCheck": true                               
-  }
+    "target": "es2016",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "rootDirs": ["./src"],
+    "typeRoots": ["./src/types", "./node_modules/@types"],
+    "outDir": "./build",
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,
+    "noImplicitAny": false,
+    "skipLibCheck": true
+  },
+  "include": ["src/**/*"]
 }

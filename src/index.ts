@@ -1,13 +1,11 @@
-// index.ts (replace relevant parts or merge)
 import express, { Application, Request, Response, NextFunction } from "express";
 import dotenv from "dotenv";
 import session from "express-session";
 import path from "path";
 import cors from "cors";
 import connectDb from "./config/connectDb";
-import adminApiRoutes from "./routes/adminApi";
-import campaignRoutes from "./routes/campaigns";
-import authRoutes from "./routes/authRoute"; // <- new
+import authRoutes from "./routes/authRoutes";
+import dashboardRoutes from "./routes/dashboardRoutes";
 
 dotenv.config();
 connectDb();
@@ -15,10 +13,18 @@ connectDb();
 const app: Application = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
+// ---------- MIDDLEWARES ----------
+app.use(
+  cors({
+    credentials: true,
+    origin: [process.env.FRONTEND_ORIGIN || "http://localhost:3000"],
+  })
+);
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// ✅ Sessions
 app.use(
   session({
     secret: process.env.SESSION_SECRET || "secret",
@@ -27,64 +33,36 @@ app.use(
   }) as any
 );
 
-// make session messages available in all views
+// ✅ Make user and message available to all views
 app.use((req: Request, res: Response, next: NextFunction) => {
   res.locals.message = (req.session as any)?.message || null;
-  // clear after exposing once
   if ((req.session as any)?.message) delete (req.session as any).message;
   res.locals.user = (req.session as any)?.user || null;
   next();
 });
 
+// ---------- VIEW ENGINE ----------
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
 app.use(express.static(path.join(__dirname, "public")));
 
-// routes
-app.use(adminApiRoutes);
-app.use(campaignRoutes);
-app.use(authRoutes); // mount our auth route handlers (POST /login, POST /register)
+// ---------- ROUTES ----------
 
-// Default route -> login page
+// 🏠 Default route → redirect to login
 app.get("/", (req: Request, res: Response) => {
-  res.render("login", { error: null });
+  return res.redirect("/login");
 });
 
-// Middleware: Admin-only access
-function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  if ((req.session as any).isAdmin) return next();
-  return res.redirect("/");
-}
+// 🧭 Mount modular routes (recommended order)
+app.use(authRoutes);
+app.use(dashboardRoutes);
 
-// Dashboard route (protected — currently uses requireAdmin as you had)
-app.get("/dashboard", requireAdmin, (req: Request, res: Response) => {
-  res.render("dashboard");
-});
-
-// Registration page (GET) - admin only
-app.get("/register", requireAdmin, (req: Request, res: Response) => {
-  res.render("register");
-});
-
-// admin dashboard GET/POST as you have
-app.post("/adminDashboard", requireAdmin, (req: Request, res: Response) => {
-  res.render("adminDashboard");
-});
-app.get("/adminDashboard", requireAdmin, (req: Request, res: Response) => {
-  res.render("adminDashboard");
-});
-
-// Logout
-app.get("/logout", (req: Request, res: Response) => {
-  req.session.destroy(() => {
-    res.redirect("/");
-  });
-});
-
+// ---------- FALLBACK ----------
 app.all("*", (req: Request, res: Response) => {
   res.status(404).send("Page not found");
 });
 
+// ---------- START SERVER ----------
 app.listen(PORT, () =>
   console.log(`✅ Server running at http://localhost:${PORT}`)
 );

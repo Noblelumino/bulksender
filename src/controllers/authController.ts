@@ -1,86 +1,80 @@
-// src/controllers/authController.ts
 import { Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import User from "../models/user";
+import ActivityLog from "../models/activityLogs";
+export const renderLogin = (req: Request, res: Response) => {
+  res.render("login", { error: null });
+};
 
-export const postRegister = async (req: Request, res: Response) => {
+export const loginUser = async (req: Request, res: Response) => {
+  const { email, password } = req.body;
   try {
-    const { name, email, sex, role, password, confirmPassword } = req.body;
-
-    // Basic validation
-    if (!name || !email || !sex || !role || !password || !confirmPassword) {
-      req.session!.message = { type: "danger", text: "Please fill all fields." };
-      return res.redirect("/register");
-    }
-    if (password !== confirmPassword) {
-      req.session!.message = { type: "danger", text: "Passwords do not match." };
-      return res.redirect("/register");
-    }
-    if (password.length < 6) {
-      req.session!.message = { type: "danger", text: "Password must be at least 6 characters." };
-      return res.redirect("/register");
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.render("login", { error: "User not found" });
     }
 
-    // Check existing user
-    const existing = await User.findOne({ email: email.toLowerCase() });
-    if (existing) {
-      req.session!.message = { type: "danger", text: "Email already registered." };
-      return res.redirect("/register");
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.render("login", { error: "Incorrect password" });
     }
 
-    // Hash password
-    const hashed = await bcrypt.hash(password, 10);
+    // Save user session
+    req.session.user = {
+      _id: String(user._id),
+      name: user.name,
+      email: user.email,
+      role: user.role,
+    };
 
-    // Save user
-    const user = new User({
-      name,
-      email: email.toLowerCase(),
-      sex,
-      role,
-      password: hashed,
+    // ✅ Log the login event
+    await ActivityLog.create({
+      userId: user._id,
+      email: user.email,
+      role: user.role,
+      type: "login",
+      description: `${user.name} logged in.`,
+      ipAddress: req.ip,
+      userAgent: req.headers["user-agent"],
     });
 
-    await user.save();
+    //TODO: REMOVE THIS FROM HERE TO WHERE YOU NEED IT, THIS IS FOR WHEN A USER SENDS A BULK EMAIL
+    // await ActivityLog.create({
+    //   userId: user._id,
+    //   email: user.email,
+    //   role: user.role,
+    //   type: "bulk_send",
+    //   description: `Sent campaign "${subject}" to ${recipients.length} users.`,
+    //   bulkDetails: {
+    //     campaignId: campaign._id,
+    //     totalRecipients: recipients.length,
+    //     deliveredCount: delivered.length,
+    //     failedCount: failed.length,
+    //     subject,
+    //     serviceUsed: "SendGrid",
+    //   },
+    // });
 
-    req.session!.message = { type: "success", text: "User registered successfully." };
-    return res.redirect("/register");
+    //TODO: MOVE THIS TO YOUR LOG OUT ROUTE
+    // await ActivityLog.create({
+    //   userId: user._id,
+    //   email: user.email,
+    //   role: user.role,
+    //   type: "logout",
+    //   description: `${user.name} logged out.`,
+    //   ipAddress: req.ip,
+    // });
+
+    res.redirect("/dashboard");
   } catch (err) {
-    console.error("Register Error:", err);
-    req.session!.message = { type: "danger", text: "Server error. Try again." };
-    return res.redirect("/register");
+    console.error(err);
+    res.render("login", { error: "Something went wrong. Please try again." });
   }
 };
 
-export const postLogin = async (req: Request, res: Response) => {
-  try {
-    const { email, password } = req.body;
-    if (!email || !password) {
-      return res.render("login", { error: "Please provide email and password" });
-    }
-
-    // first check environment admin fallback
-    if (email === process.env.ADMIN_EMAIL && password === process.env.ADMIN_PASSWORD) {
-      (req.session as any).isAdmin = true;
-      (req.session as any).user = { email, name: "Super Admin", role: "Admin" };
-      return res.redirect("/dashboard");
-    }
-
-    // Check DB
-    const user = await User.findOne({ email: email.toLowerCase() });
-    if (!user) return res.render("login", { error: "Invalid email or password" });
-
-    const match = await bcrypt.compare(password, user.password);
-    if (!match) return res.render("login", { error: "Invalid email or password" });
-
-    // Successful login — mark session
-    (req.session as any).user = { id: user._id, email: user.email, name: user.name, role: user.role };
-
-    // If user is admin in DB, give admin privileges
-    (req.session as any).isAdmin = user.role === "Admin";
-
-    return res.redirect("/dashboard");
-  } catch (err) {
-    console.error("Login Error:", err);
-    return res.render("login", { error: "Server error. Try again later" });
-  }
+export const logoutUser = (req: Request, res: Response) => {
+  req.session.destroy((err) => {
+    if (err) console.error(err);
+    res.redirect("/login");
+  });
 };

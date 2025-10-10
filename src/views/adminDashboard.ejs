@@ -1,66 +1,61 @@
-<!--
-Admin page (EJS) for your Express + TypeScript app.
-Place this file at: src/views/admin.ejs (or src/views/admin.ejs in your views folder)
-
-This template expects the following JSON endpoints (create on server):
-  GET /admin/api/stats
-    Response example:
-    {
-      "usersCount": 123,
-      "adminsCount": 2,
-      "messagesSentToday": 456,
-      "messagesSentTotal": 12345
-    }
-
-  GET /admin/api/activity?page=1&limit=50
-    Response example:
-    {
-      "items": [
-        { "time": "2025-10-09T12:34:56Z", "user": "alice@example.com", "action": "sent_message", "detail": "Campaign ID: 12" },
-        ...
-      ],
-      "page": 1,
-      "limit": 50,
-      "total": 345
-    }
-
-  GET /admin/api/messages/:messageId  (optional, for message details modal)
-    Response example:
-    { "id":"abc","from":"user@example.com","toCount":150,"subject":"Hello","body":"..." }
-
-The page uses Bootstrap for layout and simple client-side fetch to populate cards and the activity table.
--->
-
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Admin — Activity Log</title>
     <!-- Bootstrap CSS (CDN) -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
     <style>
-      body { padding-top: 70px; }
-      .stat-card { cursor: pointer; }
-      .table-wrap { max-height: 65vh; overflow: auto; }
-      .small-muted { font-size: 0.85rem; color: #6c757d; }
+      body {
+        padding-top: 70px;
+      }
+      .stat-card {
+        cursor: pointer;
+      }
+      .table-wrap {
+        max-height: 65vh;
+        overflow: auto;
+      }
+      .small-muted {
+        font-size: 0.85rem;
+        color: #6c757d;
+      }
     </style>
   </head>
   <body>
-
     <!-- Navbar -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
       <div class="container-fluid">
         <a class="navbar-brand" href="#">Admin</a>
-        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav" aria-controls="nav" aria-expanded="false" aria-label="Toggle navigation">
+        <button
+          class="navbar-toggler"
+          type="button"
+          data-bs-toggle="collapse"
+          data-bs-target="#nav"
+          aria-controls="nav"
+          aria-expanded="false"
+          aria-label="Toggle navigation"
+        >
           <span class="navbar-toggler-icon"></span>
         </button>
         <div class="collapse navbar-collapse" id="nav">
           <ul class="navbar-nav ms-auto">
-            <li class="nav-item"><a class="nav-link" href="/register">Add user</a></li>
-            <li class="nav-item"><a class="nav-link active" href="/admin">Activity</a></li>
-            <li class="nav-item"><a class="nav-link active" href="/">Bulk Email</a></li>
-            <li class="nav-item"><a class="nav-link" href="/logout">Logout</a></li>
+            <li class="nav-item">
+              <a class="nav-link" href="/register">Add user</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link active" href="/admin">Activity</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link active" href="/">Bulk Email</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="/logout">Logout</a>
+            </li>
           </ul>
         </div>
       </div>
@@ -70,7 +65,10 @@ The page uses Bootstrap for layout and simple client-side fetch to populate card
       <div class="row mb-3">
         <div class="col-12">
           <h3 class="mb-0">Activity Log (Home)</h3>
-          <p class="small-muted">Latest user activity on the platform. Use the stats cards to jump to other admin views.</p>
+          <p class="small-muted">
+            Latest user activity on the platform. Use the stats cards to jump to
+            other admin views.
+          </p>
         </div>
       </div>
 
@@ -93,7 +91,10 @@ The page uses Bootstrap for layout and simple client-side fetch to populate card
         </div>
 
         <div class="col-sm-6 col-md-3">
-          <div id="btn-msgs-today" class="card stat-card shadow-sm p-3 text-center">
+          <div
+            id="btn-msgs-today"
+            class="card stat-card shadow-sm p-3 text-center"
+          >
             <div class="h5">Messages Today</div>
             <div id="messagesToday" class="display-6">—</div>
             <div class="small-muted">Total messages sent today</div>
@@ -101,7 +102,10 @@ The page uses Bootstrap for layout and simple client-side fetch to populate card
         </div>
 
         <div class="col-sm-6 col-md-3">
-          <div id="btn-msgs-total" class="card stat-card shadow-sm p-3 text-center">
+          <div
+            id="btn-msgs-total"
+            class="card stat-card shadow-sm p-3 text-center"
+          >
             <div class="h5">Messages Total</div>
             <div id="messagesTotal" class="display-6">—</div>
             <div class="small-muted">All-time messages</div>
@@ -113,11 +117,22 @@ The page uses Bootstrap for layout and simple client-side fetch to populate card
       <div class="row">
         <div class="col-12">
           <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
+            <div
+              class="card-header d-flex justify-content-between align-items-center"
+            >
               <strong>Activity Log</strong>
               <div>
-                <button id="refreshBtn" class="btn btn-sm btn-outline-secondary">Refresh</button>
-                <select id="limitSelect" class="form-select form-select-sm d-inline-block" style="width:120px">
+                <button
+                  id="refreshBtn"
+                  class="btn btn-sm btn-outline-secondary"
+                >
+                  Refresh
+                </button>
+                <select
+                  id="limitSelect"
+                  class="form-select form-select-sm d-inline-block"
+                  style="width: 120px"
+                >
                   <option value="25">25</option>
                   <option value="50" selected>50</option>
                   <option value="100">100</option>
@@ -136,21 +151,30 @@ The page uses Bootstrap for layout and simple client-side fetch to populate card
                   </tr>
                 </thead>
                 <tbody id="activityBody">
-                  <tr><td colspan="5" class="text-center py-4">Loading...</td></tr>
+                  <tr>
+                    <td colspan="5" class="text-center py-4">Loading...</td>
+                  </tr>
                 </tbody>
               </table>
             </div>
             <div class="card-footer d-flex justify-content-between">
               <small id="paginationInfo">Page 1</small>
               <div>
-                <button id="prevPage" class="btn btn-sm btn-outline-primary me-2" disabled>Prev</button>
-                <button id="nextPage" class="btn btn-sm btn-primary">Next</button>
+                <button
+                  id="prevPage"
+                  class="btn btn-sm btn-outline-primary me-2"
+                  disabled
+                >
+                  Prev
+                </button>
+                <button id="nextPage" class="btn btn-sm btn-primary">
+                  Next
+                </button>
               </div>
             </div>
           </div>
         </div>
       </div>
-
     </main>
 
     <!-- Message Details Modal -->
@@ -159,13 +183,24 @@ The page uses Bootstrap for layout and simple client-side fetch to populate card
         <div class="modal-content">
           <div class="modal-header">
             <h5 class="modal-title">Message Details</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            <button
+              type="button"
+              class="btn-close"
+              data-bs-dismiss="modal"
+              aria-label="Close"
+            ></button>
           </div>
           <div class="modal-body">
             <div id="messageDetails">Loading...</div>
           </div>
           <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            <button
+              type="button"
+              class="btn btn-secondary"
+              data-bs-dismiss="modal"
+            >
+              Close
+            </button>
           </div>
         </div>
       </div>
@@ -175,65 +210,78 @@ The page uses Bootstrap for layout and simple client-side fetch to populate card
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
     <script>
-      (function(){
-        const statsUrl = '/admin/api/stats';
-        const activityUrl = '/admin/api/activity';
-        const msgUrlBase = '/admin/api/messages';
+      (function () {
+        const statsUrl = "/admin/api/stats";
+        const activityUrl = "/admin/api/activity";
+        const msgUrlBase = "/admin/api/messages";
 
         let page = 1;
         let limit = 50;
 
-        const $usersCount = document.getElementById('usersCount');
-        const $adminsCount = document.getElementById('adminsCount');
-        const $messagesToday = document.getElementById('messagesToday');
-        const $messagesTotal = document.getElementById('messagesTotal');
-        const $activityBody = document.getElementById('activityBody');
-        const $refreshBtn = document.getElementById('refreshBtn');
-        const $limitSelect = document.getElementById('limitSelect');
-        const $prevPage = document.getElementById('prevPage');
-        const $nextPage = document.getElementById('nextPage');
-        const $paginationInfo = document.getElementById('paginationInfo');
+        const $usersCount = document.getElementById("usersCount");
+        const $adminsCount = document.getElementById("adminsCount");
+        const $messagesToday = document.getElementById("messagesToday");
+        const $messagesTotal = document.getElementById("messagesTotal");
+        const $activityBody = document.getElementById("activityBody");
+        const $refreshBtn = document.getElementById("refreshBtn");
+        const $limitSelect = document.getElementById("limitSelect");
+        const $prevPage = document.getElementById("prevPage");
+        const $nextPage = document.getElementById("nextPage");
+        const $paginationInfo = document.getElementById("paginationInfo");
 
-        async function fetchStats(){
-          try{
-            const res = await fetch(statsUrl, { credentials: 'same-origin' });
-            if(!res.ok) throw new Error('Failed to fetch stats');
+        async function fetchStats() {
+          try {
+            const res = await fetch(statsUrl, { credentials: "same-origin" });
+            if (!res.ok) throw new Error("Failed to fetch stats");
             const data = await res.json();
-            $usersCount.textContent = data.usersCount ?? '0';
-            $adminsCount.textContent = data.adminsCount ?? '0';
-            $messagesToday.textContent = data.messagesSentToday ?? '0';
-            $messagesTotal.textContent = data.messagesSentTotal ?? '0';
-          }catch(err){
+            $usersCount.textContent = data.usersCount ?? "0";
+            $adminsCount.textContent = data.adminsCount ?? "0";
+            $messagesToday.textContent = data.messagesSentToday ?? "0";
+            $messagesTotal.textContent = data.messagesSentTotal ?? "0";
+          } catch (err) {
             console.error(err);
           }
         }
 
-        function formatTime(iso){
-          try{
+        function formatTime(iso) {
+          try {
             const d = new Date(iso);
             return d.toLocaleString();
-          }catch(e){ return iso }
+          } catch (e) {
+            return iso;
+          }
         }
 
-        async function fetchActivity(){
-          $activityBody.innerHTML = '<tr><td colspan="5" class="text-center py-4">Loading...</td></tr>';
-          try{
-            const res = await fetch(activityUrl + '?page=' + page + '&limit=' + limit, { credentials: 'same-origin' });
-            if(!res.ok) throw new Error('Failed to fetch activity');
+        async function fetchActivity() {
+          $activityBody.innerHTML =
+            '<tr><td colspan="5" class="text-center py-4">Loading...</td></tr>';
+          try {
+            const res = await fetch(
+              activityUrl + "?page=" + page + "&limit=" + limit,
+              { credentials: "same-origin" }
+            );
+            if (!res.ok) throw new Error("Failed to fetch activity");
             const data = await res.json();
             const items = data.items || [];
-            if(items.length === 0){
-              $activityBody.innerHTML = '<tr><td colspan="5" class="text-center py-4">No activity found</td></tr>';
-            }else{
-              $activityBody.innerHTML = items.map(it => `
+            if (items.length === 0) {
+              $activityBody.innerHTML =
+                '<tr><td colspan="5" class="text-center py-4">No activity found</td></tr>';
+            } else {
+              $activityBody.innerHTML = items
+                .map(
+                  (it) => `
                 <tr>
                   <td>${formatTime(it.time)}</td>
-                  <td>${it.user || '—'}</td>
+                  <td>${it.user || "—"}</td>
                   <td>${it.action}</td>
-                  <td>${it.detail || '—'}</td>
-                  <td><button class="btn btn-sm btn-outline-secondary" data-id="${it.id || ''}" onclick="showMessage(event)">View</button></td>
+                  <td>${it.detail || "—"}</td>
+                  <td><button class="btn btn-sm btn-outline-secondary" data-id="${
+                    it.id || ""
+                  }" onclick="showMessage(event)">View</button></td>
                 </tr>
-              `).join('');
+              `
+                )
+                .join("");
             }
 
             // pagination controls
@@ -242,35 +290,37 @@ The page uses Bootstrap for layout and simple client-side fetch to populate card
             $paginationInfo.textContent = `Page ${page} of ${pages}`;
             $prevPage.disabled = page <= 1;
             $nextPage.disabled = page >= pages;
-
-          }catch(err){
+          } catch (err) {
             console.error(err);
-            $activityBody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-danger">Failed to load</td></tr>';
+            $activityBody.innerHTML =
+              '<tr><td colspan="5" class="text-center py-4 text-danger">Failed to load</td></tr>';
           }
         }
 
-        async function showMessage(e){
-          const id = e.currentTarget.getAttribute('data-id');
-          if(!id) return;
-          const modalEl = document.getElementById('messageModal');
-          const messageDetails = document.getElementById('messageDetails');
-          messageDetails.textContent = 'Loading...';
+        async function showMessage(e) {
+          const id = e.currentTarget.getAttribute("data-id");
+          if (!id) return;
+          const modalEl = document.getElementById("messageModal");
+          const messageDetails = document.getElementById("messageDetails");
+          messageDetails.textContent = "Loading...";
           const bsModal = new bootstrap.Modal(modalEl);
           bsModal.show();
-          try{
-            const res = await fetch(msgUrlBase + '/' + id, { credentials: 'same-origin' });
-            if(!res.ok) throw new Error('Failed to fetch message');
+          try {
+            const res = await fetch(msgUrlBase + "/" + id, {
+              credentials: "same-origin",
+            });
+            if (!res.ok) throw new Error("Failed to fetch message");
             const data = await res.json();
             messageDetails.innerHTML = `
-              <p><strong>From:</strong> ${data.from || '—'}</p>
-              <p><strong>Recipients:</strong> ${data.toCount ?? '—'}</p>
-              <p><strong>Subject:</strong> ${data.subject || '—'}</p>
+              <p><strong>From:</strong> ${data.from || "—"}</p>
+              <p><strong>Recipients:</strong> ${data.toCount ?? "—"}</p>
+              <p><strong>Subject:</strong> ${data.subject || "—"}</p>
               <hr />
-              <pre style="white-space:pre-wrap">${data.body || ''}</pre>
+              <pre style="white-space:pre-wrap">${data.body || ""}</pre>
             `;
-          }catch(err){
+          } catch (err) {
             console.error(err);
-            messageDetails.textContent = 'Failed to load message details';
+            messageDetails.textContent = "Failed to load message details";
           }
         }
 
@@ -278,15 +328,29 @@ The page uses Bootstrap for layout and simple client-side fetch to populate card
         window.showMessage = showMessage;
 
         // listeners
-        $refreshBtn.addEventListener('click', () => { fetchStats(); fetchActivity(); });
-        $limitSelect.addEventListener('change', (ev) => { limit = Number(ev.target.value); page = 1; fetchActivity(); });
-        $prevPage.addEventListener('click', () => { if(page>1){ page--; fetchActivity(); } });
-        $nextPage.addEventListener('click', () => { page++; fetchActivity(); });
+        $refreshBtn.addEventListener("click", () => {
+          fetchStats();
+          fetchActivity();
+        });
+        $limitSelect.addEventListener("change", (ev) => {
+          limit = Number(ev.target.value);
+          page = 1;
+          fetchActivity();
+        });
+        $prevPage.addEventListener("click", () => {
+          if (page > 1) {
+            page--;
+            fetchActivity();
+          }
+        });
+        $nextPage.addEventListener("click", () => {
+          page++;
+          fetchActivity();
+        });
 
         // load initial
         fetchStats();
         fetchActivity();
-
       })();
     </script>
   </body>
