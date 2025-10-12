@@ -6,6 +6,8 @@ import cors from "cors";
 import connectDb from "./config/connectDb";
 import authRoutes from "./routes/authRoutes";
 import dashboardRoutes from "./routes/dashboardRoutes";
+import bulkEmailRoutes from "./routes/bulkEmailRoutes";
+
 
 dotenv.config();
 connectDb();
@@ -41,6 +43,9 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
+app.use("/api/bulkemail", bulkEmailRoutes);
+
+
 // ---------- VIEW ENGINE ----------
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
@@ -53,9 +58,24 @@ app.get("/", (req: Request, res: Response) => {
   return res.redirect("/login");
 });
 
+// Mount API routes
+import campaignRoutes from "./routes/campaign";
+app.use("/api/bulkemail", campaignRoutes);
+
+
 // 🧭 Mount modular routes (recommended order)
-app.use(authRoutes);
+app.use("/", authRoutes);
+
 app.use(dashboardRoutes);
+
+
+
+// Logout & 404
+app.get("/logout", (req: Request, res: Response) => {
+  req.session.destroy(() => res.redirect("/"));
+});
+
+
 
 // ---------- FALLBACK ----------
 app.all("*", (req: Request, res: Response) => {

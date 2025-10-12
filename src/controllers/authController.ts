@@ -2,6 +2,95 @@ import { Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import User from "../models/user";
 import ActivityLog from "../models/activityLogs";
+
+// Render register page
+export const renderRegister = (req: Request, res: Response) => {
+  res.render("register", { error: null });
+};
+
+/**
+ * POST /auth/register
+ * Body: { name, email, password, confirmPassword, role? }
+ * Renders register view on error; redirects to /dashboard on success.
+ */
+export const registerUser = async (req: Request, res: Response) => {
+  try {
+    const { name, email, password, confirmPassword, role } = req.body as {
+      name?: string;
+      email?: string;
+      password?: string;
+      confirmPassword?: string;
+      role?: "admin" | "user";
+    };
+
+    // Basic validation
+    if (!name || !email || !password || !confirmPassword) {
+      return res.render("register", { error: "All fields are required" });
+    }
+    if (password !== confirmPassword) {
+      return res.render("register", { error: "Passwords do not match" });
+    }
+    if (password.length < 6) {
+      return res.render("register", { error: "Password must be at least 6 characters" });
+    }
+
+    // Normalize email
+    const normalizedEmail = email.toLowerCase().trim();
+
+    // Check for existing user
+    const existing = await User.findOne({ email: normalizedEmail });
+    if (existing) {
+      return res.render("register", { error: "Email already in use" });
+    }
+
+    // Hash password
+    const saltRounds = Number(process.env.BCRYPT_SALT_ROUNDS || 10);
+    const hashed = await bcrypt.hash(password, saltRounds);
+
+    // Create user
+    const user = new User({
+      name: name.trim(),
+      email: normalizedEmail,
+      password: hashed,
+      role: role === "admin" ? "admin" : "user",
+    });
+
+    await user.save();
+
+    // Log activity: registration
+    try {
+      await ActivityLog.create({
+        userId: user._id,
+        email: user.email,
+        role: user.role,
+        type: "register",
+        description: `${user.name} registered.`,
+        ipAddress: req.ip,
+        userAgent: req.headers["user-agent"],
+      });
+    } catch (logErr) {
+      console.warn("ActivityLog create failed:", logErr);
+    }
+
+    // Auto-login on register (create session)
+    req.session.user = {
+      _id: String(user._id),
+      name: user.name,
+      email: user.email,
+      role: user.role,
+    };
+
+    return res.redirect("/adminDashboard");
+  } catch (err) {
+    console.error("registerUser error:", err);
+    return res.render("register", { error: "Something went wrong. Please try again." });
+  }
+};
+
+
+
+
+// login section 
 export const renderLogin = (req: Request, res: Response) => {
   res.render("login", { error: null });
 };
