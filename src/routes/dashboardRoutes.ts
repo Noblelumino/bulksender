@@ -8,4 +8,16 @@ router.get("/dashboard", ensureAuthenticated, (req: Request, res: Response) => {
   res.render("dashboard", { user });
 });
 
+router.get("/adminDashboard", ensureAuthenticated, (req: Request, res: Response) => {
+  const user = req.session.user;
+  res.render("adminDashboard", { user });
+});
+
+router.get("/register", ensureAuthenticated, (req: Request, res: Response) => {
+  const user = req.session.user;
+  res.render("register", { user });
+});
+
+
+
 export default router;
