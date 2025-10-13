@@ -20,7 +20,7 @@ dotenv.config();
         name: "Admin User",
         email: "admin@bulk.com",
         role: "admin",
-        password: hashedAdminPass,
+        password: 1234,
       },
       {
         name: "Regular User",
