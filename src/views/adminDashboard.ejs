@@ -48,7 +48,7 @@
               <a class="nav-link" href="/register">Add user</a>
             </li>
             <li class="nav-item">
-              <a class="nav-link active" href="/admin">Activity</a>
+              <a class="nav-link active" href="/adminDashboard">Activity</a>
             </li>
             <li class="nav-item">
               <a class="nav-link active" href="/">Bulk Email</a>
@@ -72,11 +72,16 @@
       <!-- Stats Row -->
       <div class="row g-3 mb-4">
         <div class="col-sm-6 col-md-3">
+
+          <a href="/userDetails">
           <div id="btn-users" class="card stat-card shadow-sm p-3 text-center">
             <div class="h5">Users</div>
             <div id="usersCount" class="display-6">—</div>
+
             <div class="small-muted">Total registered users</div>
           </div>
+          </a>
+
         </div>
 
         <div class="col-sm-6 col-md-3">
@@ -349,6 +354,190 @@
         fetchStats();
         fetchActivity();
       })();
+
+// loads the admins and user 
+async function loadUsersCount() {
+  const usersEl = document.getElementById("usersCount");
+  const adminsEl = document.getElementById("adminsCount");
+  if (!usersEl || !adminsEl) return;
+
+  try {
+    const res = await fetch("/api/admin/users/count", { credentials: "same-origin" });
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+
+    const data = await res.json();
+    if (data && data.ok) {
+      usersEl.textContent = (data.count ?? 0).toLocaleString();
+      adminsEl.textContent = (data.adminCount ?? 0).toLocaleString();
+    } else {
+      usersEl.textContent = "—";
+      adminsEl.textContent = "—";
+      console.error("API returned error:", data);
+    }
+  } catch (err) {
+    console.error("Failed to load users count:", err);
+    usersEl.textContent = "—";
+    adminsEl.textContent = "—";
+  }
+}
+
+document.addEventListener("DOMContentLoaded", loadUsersCount);
+setInterval(loadUsersCount, 60_000);
+
+// this is the part that displays my activity log 
+(() => {
+  const activityBody = document.getElementById("activityBody");
+  const refreshBtn = document.getElementById("refreshBtn");
+  const limitSelect = document.getElementById("limitSelect");
+  const prevBtn = document.getElementById("prevPage");
+  const nextBtn = document.getElementById("nextPage");
+  const paginationInfo = document.getElementById("paginationInfo");
+
+  let page = 1;
+  let limit = Number(limitSelect?.value || 50);
+  let totalPages = 1;
+
+  function formatTime(iso) {
+    try {
+      const d = new Date(iso);
+      return d.toLocaleString();
+    } catch {
+      return iso;
+    }
+  }
+
+  function makeDetailCell(log) {
+    if (log.bulkDetails) {
+      const b = log.bulkDetails;
+      return `
+        <div><strong>Campaign:</strong> ${b.campaignId || "-"} </div>
+        <div><strong>Subject:</strong> ${b.subject || "-"}</div>
+        <div><strong>Recipients:</strong> ${b.totalRecipients ?? "-"}</div>
+        <div><strong>Delivered:</strong> ${b.deliveredCount ?? "-"}</div>
+        <div><strong>Failed:</strong> ${b.failedCount ?? "-"}</div>
+        <div><strong>Service:</strong> ${b.serviceUsed || "-"}</div>
+      `;
+    }
+
+    if (log.error) {
+      return `<pre style="white-space:pre-wrap">${String(log.error)}</pre>`;
+    }
+
+    return `<div>${log.description || "-"}</div>`;
+  }
+
+  function renderLogs(logs) {
+    if (!activityBody) return;
+    if (!logs || logs.length === 0) {
+      activityBody.innerHTML = `<tr><td colspan="5" class="text-center py-4">No activity found</td></tr>`;
+      return;
+    }
+
+    activityBody.innerHTML = logs.map(log => {
+      const time = formatTime(log.createdAt);
+      const user = `${log.email} (${log.role || "—"})`;
+      const action = (log.type || "—").replace("_", " ");
+      const detail = makeDetailCell(log);
+      const moreBtn = `<button class="btn btn-sm btn-outline-secondary more-btn" data-id="${log._id}">More</button>`;
+
+      return `
+        <tr>
+          <td>${time}</td>
+          <td>${user}</td>
+          <td>${action}</td>
+          <td>${detail}</td>
+          <td>${moreBtn}</td>
+        </tr>
+      `;
+    }).join("");
+  }
+
+  async function load() {
+    if (!activityBody) return;
+    activityBody.innerHTML = `<tr><td colspan="5" class="text-center py-4">Loading...</td></tr>`;
+    try {
+      const q = "";
+      const res = await fetch(`/api/admin/activity?limit=${limit}&page=${page}&q=${encodeURIComponent(q)}`, { credentials: "same-origin" });
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      const data = await res.json();
+      if (!data.ok) throw new Error("API returned error");
+
+      renderLogs(data.logs);
+      totalPages = data.totalPages || 1;
+      paginationInfo.textContent = `Page ${data.page} of ${totalPages} (Total: ${data.total})`;
+      prevBtn.disabled = page <= 1;
+      nextBtn.disabled = page >= totalPages;
+    } catch (err) {
+      console.error("Failed to load activity:", err);
+      activityBody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-danger">Failed to load</td></tr>`;
+      paginationInfo.textContent = "";
+    }
+  }
+
+  // events
+  refreshBtn?.addEventListener("click", () => { load(); });
+  limitSelect?.addEventListener("change", (e) => {
+    limit = Number(limitSelect.value);
+    page = 1;
+    load();
+  });
+  prevBtn?.addEventListener("click", () => {
+    if (page > 1) { page--; load(); }
+  });
+  nextBtn?.addEventListener("click", () => {
+    page++; load();
+  });
+
+  // delegate more button clicks to show modal/simple alert with raw JSON
+  document.addEventListener("click", (ev) => {
+    const t = ev.target;
+    if (t && t.classList && t.classList.contains("more-btn")) {
+      const tr = t.closest("tr");
+      const id = t.getAttribute("data-id");
+      // find the log row in the DOM by reading the detail cell; simpler: fetch single log endpoint (not implemented)
+      // For now show a quick fetch to /api/admin/activity?limit=1&page=1 and filter by id OR show row details already in table.
+      alert("Open details for log id: " + id + "\nYou can implement a dedicated endpoint to fetch one log.");
+    }
+  });
+
+  // initial load
+  document.addEventListener("DOMContentLoaded", load);
+})();
+// this is the message count section 
+async function loadMessageStats() {
+  const todayEl = document.getElementById("messagesToday");
+  const totalEl = document.getElementById("messagesTotal");
+  if (!todayEl || !totalEl) return;
+
+  try {
+    const res = await fetch("/api/admin/messages/stats", { credentials: "same-origin" });
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    const data = await res.json();
+
+    if (data && data.ok) {
+      todayEl.textContent = (data.messagesToday ?? 0).toLocaleString();
+      totalEl.textContent = (data.messagesTotal ?? 0).toLocaleString();
+    } else {
+      todayEl.textContent = "—";
+      totalEl.textContent = "—";
+      console.error("API returned error:", data);
+    }
+  } catch (err) {
+    console.error("Failed to load message stats:", err);
+    todayEl.textContent = "—";
+    totalEl.textContent = "—";
+  }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  // load existing counts you already fetch
+  if (typeof loadUsersCount === "function") loadUsersCount();
+  loadMessageStats();
+
+  // optional: refresh these tiles every minute
+  setInterval(loadMessageStats, 60_000);
+});
+
     </script>
   </body>
 </html>

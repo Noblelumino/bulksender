@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import User from "../models/user";
 import ActivityLog from "../models/activityLogs";
+import { logFromRequest } from "../utils/activityLogger";
 
 // Render register page
 export const renderRegister = (req: Request, res: Response) => {
@@ -162,6 +163,18 @@ export const loginUser = async (req: Request, res: Response) => {
 };
 
 export const logoutUser = (req: Request, res: Response) => {
+  const sessionUser = req.session.user;
+  if (sessionUser) {
+    // log logout (do not await)
+    logFromRequest(req, {
+      userId: sessionUser._id,
+      email: sessionUser.email,
+      role: sessionUser.role,
+      type: "logout",
+      description: `${sessionUser.name} logged out.`,
+    });
+  }
+
   req.session.destroy((err) => {
     if (err) console.error(err);
     res.redirect("/login");

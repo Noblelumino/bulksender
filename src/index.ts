@@ -7,6 +7,11 @@ import connectDb from "./config/connectDb";
 import authRoutes from "./routes/authRoutes";
 import dashboardRoutes from "./routes/dashboardRoutes";
 import bulkEmailRoutes from "./routes/bulkEmailRoutes";
+import count from "./routes/count";
+import activityRouter from "./routes/activity";
+import userDetailsRoute from "./routes/userDetails";
+import messagesRouter from "./routes/messages";
+import campaignRoutes from "./routes/campaign";
 
 
 dotenv.config();
@@ -59,7 +64,7 @@ app.get("/", (req: Request, res: Response) => {
 });
 
 // Mount API routes
-import campaignRoutes from "./routes/campaign";
+
 app.use("/api/bulkemail", campaignRoutes);
 
 
@@ -67,6 +72,11 @@ app.use("/api/bulkemail", campaignRoutes);
 app.use("/", authRoutes);
 
 app.use(dashboardRoutes);
+
+app.use("/api/admin", count);
+app.use("/api/admin/activity", activityRouter);
+app.use("/", userDetailsRoute);
+app.use("/api/admin/messages", messagesRouter);
 
 
 
