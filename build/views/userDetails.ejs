@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>User Details — Admin</title>
+
+  <!-- Bootstrap 5 (use your project's local Bootstrap if preferred) -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+
+  <style>
+    /* Fancy but subtle styling */
+    .hero {
+      background: linear-gradient(90deg, rgba(2,0,36,1) 0%, rgba(58,123,213,1) 35%, rgba(0,212,255,1) 100%);
+      color: white;
+      padding: 1.25rem;
+      border-radius: .5rem;
+      margin-bottom: 1rem;
+      box-shadow: 0 6px 18px rgba(10,50,100,0.08);
+    }
+    .stat {
+      font-size: 1.75rem;
+      font-weight: 700;
+    }
+    .table-wrap {
+      max-height: 58vh;
+      overflow: auto;
+    }
+    .user-row:hover {
+      background: rgba(0,0,0,0.02);
+    }
+    .badge-role {
+      text-transform: capitalize;
+    }
+    .small-muted {
+      color: #6c757d;
+    }
+    pre.json-pre {
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 50vh;
+      overflow: auto;
+      background: #f8f9fa;
+      padding: .75rem;
+      border-radius: .375rem;
+      border: 1px solid #e9ecef;
+    }
+  </style>
+</head>
+<body class="bg-light">
+  <div class="container mt-4">
+
+    <!-- Header / hero -->
+    <div class="hero d-flex justify-content-between align-items-center">
+      <div>
+        <h3 class="mb-0">User Details</h3>
+        <small class="small-muted">Browse users, search, export and view full details</small>
+      </div>
+      <div class="text-end">
+        <div class="d-flex gap-2 align-items-center">
+          <div class="me-3 text-end">
+            <div class="small-muted">Total users</div>
+            <div id="totalUsers" class="stat">—</div>
+          </div>
+          <button id="exportCsv" class="btn btn-outline-light btn-sm">Export CSV</button>
+          <a href="/admin/dashboard" class="btn btn-light btn-sm">Back to Dashboard</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="card mb-3">
+      <div class="card-body">
+        <div class="row g-2 align-items-center">
+          <div class="col-auto">
+            <input id="searchInput" type="search" class="form-control" placeholder="Search by name / email / role">
+          </div>
+
+          <div class="col-auto">
+            <select id="roleFilter" class="form-select">
+              <option value="">All roles</option>
+              <option value="admin">Admin</option>
+              <option value="user">User</option>
+            </select>
+          </div>
+
+          <div class="col-auto">
+            <select id="limitSelect" class="form-select">
+              <option value="10">10</option>
+              <option value="25" selected>25</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>
+          </div>
+
+          <div class="col-auto ms-auto text-end">
+            <button id="refreshBtn" class="btn btn-primary btn-sm">Refresh</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Table -->
+    <div class="card mb-3">
+      <div class="card-body table-wrap p-0">
+        <table class="table table-hover table-striped mb-0">
+          <thead class="table-dark sticky-top">
+            <tr>
+              <th scope="col">#</th>
+              <th scope="col">Name</th>
+              <th scope="col">Email</th>
+              <th scope="col">Role</th>
+              <th scope="col">Joined</th>
+              <th scope="col">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="usersTableBody">
+            <tr>
+              <td colspan="6" class="text-center py-4">Loading users...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card-footer d-flex align-items-center">
+        <small id="pageInfo" class="me-auto">Page 1</small>
+        <div class="btn-group" role="group">
+          <button id="prevPage" class="btn btn-outline-primary btn-sm" disabled>Prev</button>
+          <button id="nextPage" class="btn btn-primary btn-sm">Next</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- User details modal -->
+  <div class="modal fade" id="userModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 id="modalTitle" class="modal-title">User details</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div id="userOverview" class="mb-3"></div>
+          <h6 class="mb-2">Raw data</h6>
+          <pre id="userJson" class="json-pre">...</pre>
+        </div>
+        <div class="modal-footer">
+          <button id="copyJson" class="btn btn-outline-secondary btn-sm">Copy JSON</button>
+          <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bootstrap JS (popper included) -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+  // -------------------------
+  // Client-side logic
+  // -------------------------
+  (function () {
+    // DOM references
+    const usersBody = document.getElementById('usersTableBody');
+    const searchInput = document.getElementById('searchInput');
+    const roleFilter = document.getElementById('roleFilter');
+    const limitSelect = document.getElementById('limitSelect');
+    const refreshBtn = document.getElementById('refreshBtn');
+    const prevBtn = document.getElementById('prevPage');
+    const nextBtn = document.getElementById('nextPage');
+    const pageInfo = document.getElementById('pageInfo');
+    const exportCsvBtn = document.getElementById('exportCsv');
+    const totalUsersEl = document.getElementById('totalUsers');
+
+    // Modal
+    const userModal = new bootstrap.Modal(document.getElementById('userModal'));
+    const modalTitle = document.getElementById('modalTitle');
+    const userOverview = document.getElementById('userOverview');
+    const userJsonPre = document.getElementById('userJson');
+    const copyJsonBtn = document.getElementById('copyJson');
+
+    // state
+    let page = 1;
+    let limit = Number(limitSelect.value || 25);
+    let q = '';
+    let role = '';
+    let total = 0;
+    let usersCache = []; // to support CSV export & modal details
+
+    function toLocaleDateTime(d) {
+      try {
+        return new Date(d).toLocaleString();
+      } catch (e) { return d; }
+    }
+
+    function escapeHtml(s) {
+      if (s == null) return '';
+      return String(s)
+        .replaceAll('&','&amp;')
+        .replaceAll('<','&lt;')
+        .replaceAll('>','&gt;')
+        .replaceAll('"','&quot;')
+        .replaceAll("'", '&#39;');
+    }
+
+    // render table rows
+    function renderRows(users) {
+      usersBody.innerHTML = '';
+      if (!users || users.length === 0) {
+        usersBody.innerHTML = '<tr><td colspan="6" class="text-center py-4">No users found</td></tr>';
+        return;
+      }
+
+      users.forEach((u, idx) => {
+        const num = (page - 1) * limit + idx + 1;
+        const joined = u.createdAt ? toLocaleDateTime(u.createdAt) : '-';
+        const name = escapeHtml(u.name || '-');
+        const email = escapeHtml(u.email || '-');
+        const roleBadge = `<span class="badge bg-${u.role === 'admin' ? 'danger' : 'secondary'} badge-role">${escapeHtml(u.role || '')}</span>`;
+        const actions = `
+          <button class="btn btn-sm btn-outline-primary me-1 view-btn" data-index="${idx}">View</button>
+          <button class="btn btn-sm btn-outline-secondary me-1 copy-email" data-email="${escapeHtml(u.email || '')}">Copy</button>
+        `;
+
+        const tr = document.createElement('tr');
+        tr.className = 'user-row';
+        tr.innerHTML = `
+          <td>${num}</td>
+          <td>${name}</td>
+          <td><a href="mailto:${email}">${email}</a></td>
+          <td>${roleBadge}</td>
+          <td>${joined}</td>
+          <td>${actions}</td>
+        `;
+        usersBody.appendChild(tr);
+      });
+    }
+
+    // fetch list (expects your API to accept limit, page, q, role)
+    async function fetchUsers() {
+      usersBody.innerHTML = '<tr><td colspan="6" class="text-center py-4">Loading...</td></tr>';
+      try {
+        // Build query params (backend should read limit/page/q/role if supported)
+        const params = new URLSearchParams();
+        params.set('limit', String(limit));
+        params.set('page', String(page));
+        if (q) params.set('q', q);
+        if (role) params.set('role', role);
+
+        // same-origin credentials; change if different origin
+        const res = await fetch('/api/admin/users?'+params.toString(), { credentials: 'same-origin' });
+        if (!res.ok) throw new Error(res.status + ' ' + res.statusText);
+        const data = await res.json();
+
+        // If your backend returns {ok:true, users: [...]}
+        const users = (data && data.ok && Array.isArray(data.users)) ? data.users : (data.users || data);
+        usersCache = users;
+
+        // update total if backend provides it; otherwise set based on received items
+        total = data.total || (users.length + (page-1)*limit);
+        totalUsersEl.textContent = (data.total ?? users.length).toLocaleString();
+
+        renderRows(users);
+        pageInfo.textContent = `Page ${page} — Showing ${users.length} rows`;
+        prevBtn.disabled = page <= 1;
+        nextBtn.disabled = users.length < limit; // simple heuristic
+      } catch (err) {
+        console.error('Failed to fetch users:', err);
+        usersBody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-danger">Failed to load users</td></tr>';
+        pageInfo.textContent = '';
+      }
+    }
+
+    // Export CSV (basic)
+    function exportCsv() {
+      if (!usersCache || usersCache.length === 0) {
+        alert('No users to export on this page.');
+        return;
+      }
+
+      const rows = [];
+      const headers = ['name','email','role','createdAt','_id'];
+      rows.push(headers.join(','));
+
+      usersCache.forEach(u => {
+        const vals = headers.map(h => {
+          let v = u[h] ?? '';
+          if (typeof v === 'string') {
+            v = v.replace(/"/g, '""');
+            return `"${v}"`;
+          }
+          return `"${u[h] ?? ''}"`;
+        });
+        rows.push(vals.join(','));
+      });
+
+      const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `users_page_${page}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    // open modal for a given user's full details (index is index in usersCache)
+    function openUserModal(index) {
+      const u = usersCache[index];
+      if (!u) return;
+      modalTitle.textContent = u.name || u.email || 'User details';
+      userOverview.innerHTML = `
+        <div><strong>Name:</strong> ${escapeHtml(u.name || '-')}</div>
+        <div><strong>Email:</strong> <a href="mailto:${escapeHtml(u.email || '-') }">${escapeHtml(u.email || '-')}</a></div>
+        <div><strong>Role:</strong> ${escapeHtml(u.role || '-')}</div>
+        <div><strong>Joined:</strong> ${u.createdAt ? toLocaleDateTime(u.createdAt) : '-'}</div>
+      `;
+      userJsonPre.textContent = JSON.stringify(u, null, 2);
+      userModal.show();
+    }
+
+    // Copy JSON
+    copyJsonBtn?.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(userJsonPre.textContent);
+        copyJsonBtn.textContent = 'Copied!';
+        setTimeout(() => copyJsonBtn.textContent = 'Copy JSON', 1500);
+      } catch (err) {
+        console.warn('Copy failed', err);
+        alert('Copy failed: ' + err);
+      }
+    });
+
+    // Event delegation for action buttons in table
+    document.addEventListener('click', (ev) => {
+      const target = ev.target;
+      if (target.matches('.view-btn')) {
+        const idx = Number(target.getAttribute('data-index'));
+        openUserModal(idx);
+      } else if (target.matches('.copy-email')) {
+        const em = target.getAttribute('data-email');
+        navigator.clipboard?.writeText(em || '').then(() => {
+          target.textContent = 'Copied';
+          setTimeout(() => target.textContent = 'Copy', 1000);
+        }).catch(() => alert('Copy failed'));
+      }
+    });
+
+    // Controls
+    refreshBtn?.addEventListener('click', () => fetchUsers());
+    limitSelect?.addEventListener('change', () => { limit = Number(limitSelect.value); page = 1; fetchUsers(); });
+    searchInput?.addEventListener('keyup', (e) => {
+      // press Enter to search immediately; otherwise debounce
+      if (e.key === 'Enter') {
+        q = searchInput.value.trim();
+        page = 1;
+        fetchUsers();
+      }
+    });
+    roleFilter?.addEventListener('change', () => { role = roleFilter.value; page = 1; fetchUsers(); });
+
+    prevBtn?.addEventListener('click', () => { if (page > 1) { page--; fetchUsers(); } });
+    nextBtn?.addEventListener('click', () => { page++; fetchUsers(); });
+
+    exportCsvBtn?.addEventListener('click', exportCsv);
+
+    // initial load
+    document.addEventListener('DOMContentLoaded', fetchUsers);
+  })();
+  </script>
+</body>
+</html>

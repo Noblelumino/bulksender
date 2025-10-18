@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Admin Login | Bulk SMS</title>
+  </head>
+  <body
+    style="
+      margin: 0;
+      padding: 0;
+      height: 100vh;
+      background: linear-gradient(135deg, #1e3c72, #2a5298);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      color: #333;
+    "
+  >
+    <div
+      style="
+        background: #fff;
+        border-radius: 16px;
+        padding: 40px 50px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        width: 90%;
+        max-width: 400px;
+        text-align: center;
+        animation: fadeIn 0.6s ease;
+      "
+    >
+      <h1 style="margin-bottom: 10px; color: #1e3c72"> Login page</h1>
+      <p style="margin-bottom: 25px; color: #777">
+        Please enter your credentials to continue.
+      </p>
+
+      <% if (error) { %>
+      <div
+        style="
+          background: #ffe6e6;
+          color: #d8000c;
+          padding: 10px;
+          border-radius: 8px;
+          margin-bottom: 20px;
+        "
+      >
+        <%= error %>
+      </div>
+      <% } %>
+
+      <form method="POST" action="/login">
+        <input
+          type="email"
+          name="email"
+          placeholder="Email Address"
+          required
+          style="
+            width: 100%;
+            padding: 12px;
+            margin-bottom: 15px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            font-size: 15px;
+          "
+        />
+        <input
+          type="password"
+          name="password"
+          placeholder="Password"
+          required
+          style="
+            width: 100%;
+            padding: 12px;
+            margin-bottom: 20px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            font-size: 15px;
+          "
+        />
+        <button
+          type="submit"
+          style="
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, #1e3c72, #2a5298);
+            border: none;
+            color: white;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: 0.3s ease;
+          "
+          onmouseover="this.style.opacity='0.9'"
+          onmouseout="this.style.opacity='1'"
+        >
+          Login
+        </button>
+      </form>
+    </div>
+  </body>
+</html>
