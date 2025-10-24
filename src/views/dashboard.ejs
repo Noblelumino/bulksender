@@ -76,11 +76,11 @@
             <input
               id="contactsFile"
               type="file"
-              accept=".csv"
+              accept=".csv,.txt,.doc,.docx"
               class="form-control form-control-sm"
             />
             <div class="form-text small-muted">
-              Upload a CSV with an `email` column.
+              Upload a CSV, TXT AND DOC files 
             </div>
           </div>
           <div class="mb-2">
@@ -237,11 +237,17 @@
                   </div>
                   <div class="mb-2">
                     <label class="form-label">Body (HTML allowed)</label>
-                    <textarea
+
+                    <!-- CONTENTEDITABLE: preserves pasted HTML, inline styles, tables, etc. -->
+                    <div 
                       id="body"
-                      class="form-control editor"
-                      placeholder="Write your email body here..."
-                    ></textarea>
+                      class="form-control"
+                      contenteditable="true"
+                      style="min-height:250px; background:#fff; overflow:auto; padding:10px; border:1px solid #ccc;"
+                      placeholder="Paste or type your email content here (supports full HTML formatting)">
+                    </div>
+                    <small class="form-text text-muted">Paste directly from Word, Gmail, or any email builder — all formatting and colors are preserved.</small>
+
                     <div class="form-text small-muted">
                       Use placeholders like {{ firstName }} to personalize.
                     </div>
@@ -325,465 +331,643 @@
 
     <!-- Bootstrap JS + small app JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-      // ------------------------
-      // Client-side logic
-      // ------------------------
+  <!-- Add mammoth for .docx parsing -->
+<script src="https://unpkg.com/mammoth/mammoth.browser.min.js"></script>
 
-      let senderName = "";
-      let emailService = "";
-      let emailAddress = "";
-      let passwordService = "";
-      let subject = "";
-      let title = "";
-      let body = "";
-      let bestRegards = "";
-      let contactsList = []; // array of {email, firstName?, lastName?}
-      let scheduleTime = null;
+<script>
+  // ------------------------
+  // Client-side logic (preserve HTML in contenteditable)
+  // ------------------------
 
-      const TEMPLATES = [
-        {
-          id: "welcome",
-          name: "Welcome - Short",
-          subject: "Welcome to our community!",
-          title: "Welcome Short",
-          body: "<p>Hello {{firstName}},</p><p>Welcome! We're excited to have you.</p><p>{{bestRegards}}</p>",
-        },
-        {
-          id: "promo",
-          name: "Promotional",
-          subject: "Limited time offer — don't miss out",
-          title: "Promo",
-          body: "<h3>Special Offer</h3><p>Hi {{firstName}}, check this out.</p><p>{{bestRegards}}</p>",
-        },
-        {
-          id: "newsletter",
-          name: "Monthly Newsletter",
-          subject: "This month at a glance",
-          title: "Newsletter",
-          body: "<p>Dear {{firstName}},</p><p>Here is what's new.</p><p>{{bestRegards}}</p>",
-        },
-      ];
+  let senderName = "";
+  let emailService = "";
+  let emailAddress = "";
+  let passwordService = "";
+  let subject = "";
+  let title = "";
+  let body = ""; // kept for backward compatibility but we prefer bodyHtml from DOM
+  let bestRegards = "";
+  let contactsList = []; // array of {email, firstName?, lastName?}
+  let scheduleTime = null;
 
-      // Render templates
-      const templatesListEl = document.getElementById("templatesList");
-      function renderTemplates() {
-        templatesListEl.innerHTML = "";
-        TEMPLATES.forEach((t) => {
-          const btn = document.createElement("button");
-          btn.className = "list-group-item list-group-item-action template-card";
-          btn.innerHTML = `<div class="d-flex justify-content-between align-items-center"><div>${t.name}</div><small class="text-muted">${t.title}</small></div>`;
-          btn.onclick = () => selectTemplate(t.id);
-          templatesListEl.appendChild(btn);
+  const TEMPLATES = [
+    { id: "welcome", name: "Welcome - Short", subject: "Welcome to our community!", title: "Welcome Short", body: "<p>Hello {{firstName}},</p><p>Welcome! We're excited to have you.</p><p>{{bestRegards}}</p>" },
+    { id: "promo", name: "Promotional", subject: "Limited time offer — don't miss out", title: "Promo", body: "<h3>Special Offer</h3><p>Hi {{firstName}}, check this out.</p><p>{{bestRegards}}</p>" },
+    { id: "newsletter", name: "Monthly Newsletter", subject: "This month at a glance", title: "Newsletter", body: "<p>Dear {{firstName}},</p><p>Here is what's new.</p><p>{{bestRegards}}</p>" },
+  ];
+
+  // Helpers
+  function getBodyHtml() {
+    const el = document.getElementById("body");
+    return el ? el.innerHTML : "";
+  }
+  function setBodyHtml(html) {
+    const el = document.getElementById("body");
+    if (el) el.innerHTML = html || "";
+    body = getBodyHtml();
+    updatePreview();
+  }
+
+  function escapeHtml(str) {
+    if (!str) return "";
+    return String(str).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');
+  }
+
+  // Render templates
+  const templatesListEl = document.getElementById("templatesList");
+  function renderTemplates() {
+    templatesListEl.innerHTML = "";
+    TEMPLATES.forEach((t) => {
+      const btn = document.createElement("button");
+      btn.className = "list-group-item list-group-item-action template-card";
+      btn.innerHTML = `<div class="d-flex justify-content-between align-items-center"><div>${t.name}</div><small class="text-muted">${t.title}</small></div>`;
+      btn.addEventListener("click", () => selectTemplate(t.id, btn));
+      templatesListEl.appendChild(btn);
+    });
+  }
+
+  function selectTemplate(id, btnEl) {
+    const t = TEMPLATES.find((x) => x.id === id);
+    if (!t) return;
+    title = t.title;
+    subject = t.subject;
+    // Insert HTML directly into contenteditable
+    setBodyHtml(t.body || "");
+    document.getElementById("title").value = title;
+    document.getElementById("subject").value = subject;
+    document.querySelectorAll(".template-card").forEach((el) => el.classList.remove("active"));
+    if (btnEl) btnEl.classList.add("active");
+  }
+
+  function updatePreview() {
+    const previewEl = document.getElementById("livePreview");
+    const signature = escapeHtml(bestRegards) || "— Team";
+
+    // Get raw editor HTML (preserve as-is)
+    let editorHtml = getBodyHtml() || "";
+
+    // If the editorHtml is empty but 'body' variable has plain text, convert to minimal HTML
+    if (!editorHtml.trim() && body && body.trim()) {
+      // escape then newline-><br>
+      editorHtml = escapeHtml(body).replace(/\n/g, "<br>");
+    }
+
+    // Replace some placeholders for preview only (so user sees personalized example)
+    editorHtml = editorHtml.replaceAll("{{ firstName }}", "Friend").replaceAll("{{firstName}}", "Friend");
+    editorHtml = editorHtml.replaceAll("{{ lastName }}", "Customer").replaceAll("{{lastName}}", "Customer");
+
+    // Build preview wrapper (simple)
+    const wrapper = `
+      <div style="font-family:Arial,Helvetica,sans-serif;background:#ffffff;color:#222;padding:12px;">
+        <div style="border-bottom:1px solid #eee;padding-bottom:10px;margin-bottom:12px;">
+          <strong style="color:#0d6efd">${escapeHtml(senderName || "Company Name")}</strong>
+        </div>
+
+        <div><strong style="display:block;margin-bottom:8px;">${escapeHtml(subject || "")}</strong></div>
+
+        <div>${editorHtml}</div>
+
+        <div style="margin-top:18px;color:#6c757d">${signature}</div>
+      </div>
+    `;
+
+    previewEl.innerHTML = wrapper;
+
+    document.getElementById("recipientsCount").innerText = contactsList.length;
+    document.getElementById("serviceLabel").innerText = emailService || "-";
+    document.getElementById("fromLabel").innerText =
+      senderName && emailAddress ? `${senderName} <${emailAddress}>` : "-";
+  }
+
+  // Wire inputs to state
+  document.getElementById("senderName").addEventListener("input", (e) => { senderName = e.target.value; updatePreview(); });
+  document.getElementById("emailService").addEventListener("change", (e) => { emailService = e.target.value; updatePreview(); });
+  document.getElementById("emailAddress").addEventListener("input", (e) => { emailAddress = e.target.value; updatePreview(); });
+  document.getElementById("passwordService").addEventListener("input", (e) => { passwordService = e.target.value; });
+  document.getElementById("subject").addEventListener("input", (e) => { subject = e.target.value; updatePreview(); });
+  document.getElementById("title").addEventListener("input", (e) => { title = e.target.value; });
+  document.getElementById("bestRegards").addEventListener("input", (e) => { bestRegards = e.target.value; updatePreview(); });
+
+  // Contenteditable body change -> update state and preview
+  const bodyEl = document.getElementById("body");
+  if (bodyEl) {
+    // Use input event; works for typing/paste
+    bodyEl.addEventListener("input", (e) => {
+      body = getBodyHtml();
+      updatePreview();
+    });
+    // also handle paste: preserve pasted HTML; no extra handling required as contenteditable preserves HTML by default
+  }
+
+  // Quick variable buttons: append placeholder at end
+  document.querySelectorAll(".btn-variable").forEach((b) => {
+    b.addEventListener("click", () => {
+      const v = b.dataset.var || "";
+      const el = document.getElementById("body");
+      if (!el) return;
+      // insert placeholder at end (simple)
+      el.focus();
+      el.innerHTML = el.innerHTML + " " + v;
+      // update state
+      body = getBodyHtml();
+      updatePreview();
+    });
+  });
+
+  // Better email regex (global, case-insensitive)
+  const EMAIL_REGEX = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g;
+
+  // -------------------------------
+  // File import: accept csv, txt, docx
+  // -------------------------------
+  document.getElementById("importContactsBtn").addEventListener("click", async () => {
+    const fileInput = document.getElementById("contactsFile");
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) return alert("Please select a file first.");
+
+    const ext = file.name.split(".").pop().toLowerCase();
+
+    let textOrHtml = "";
+    try {
+      textOrHtml = await fileToText(file, ext);
+    } catch (err) {
+      console.error("File read error:", err);
+      alert("Failed to read file. See console for details.");
+      return;
+    }
+
+    if (!textOrHtml || !textOrHtml.trim()) {
+      alert("No readable text found in file. If it's a legacy .doc (binary) file, please save as .docx or use .txt/.csv.");
+      return;
+    }
+
+    // If .docx conversion produced HTML (contains tags), insert into editor
+    if (ext === "docx" && /<\w+/.test(textOrHtml)) {
+      // insert HTML into contenteditable preserving formatting
+      setBodyHtml(textOrHtml);
+    }
+
+    // Extract emails from whatever was returned
+    const emails = [...(textOrHtml.matchAll(EMAIL_REGEX) || [])].map(m => m[0]).filter(Boolean);
+
+    if (emails.length === 0) {
+      // no emails found — but we may have inserted content into editor already. inform user.
+      if (ext === "docx" && /<\w+/.test(textOrHtml)) {
+        renderContactsPreview([]);
+        updatePreview();
+        alert("Document content loaded into the editor. No emails detected for contacts.");
+        return;
+      }
+      alert("No valid emails found.");
+      return;
+    }
+
+    contactsList = emails.map(email => ({ email }));
+    renderContactsPreview(contactsList);
+    updatePreview();
+  });
+
+  // Convert file to readable text depending on extension
+// Converts uploaded file (CSV, TXT, DOCX) to plain text or HTML-safe text
+async function fileToText(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+
+  if (ext === "csv" || ext === "txt") {
+    return await file.text();
+  }
+
+  if (ext === "docx") {
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const result = await mammoth.convertToHtml({ arrayBuffer });
+      return result.value;
+    } catch (err) {
+      console.error("Error reading DOCX:", err);
+      alert("Unable to read DOCX file. Please ensure it’s a valid Word document.");
+      return "";
+    }
+  }
+
+  alert("Unsupported file type. Please use .csv, .txt, or .docx only.");
+  return "";
+}
+
+  function renderContactsPreview(emails) {
+    const preview = document.getElementById("contactsPreview");
+    preview.innerHTML = emails.map(e => `<li>${escapeHtml(e.email)}</li>`).join("");
+  }
+
+  function disableControls(disabled) {
+    const sendBtn = document.getElementById("sendBtn");
+    if (sendBtn) sendBtn.disabled = disabled;
+    const saveBtn = document.getElementById("saveTemplateBtn");
+    if (saveBtn) saveBtn.disabled = disabled;
+    const previewBtn = document.getElementById("previewBtn");
+    if (previewBtn) previewBtn.disabled = disabled;
+  }
+
+  // ----------------------
+
+(async function enableImagePaste() {
+  const editor = document.getElementById('body');
+  if (!editor) return;
+
+  // fetch remote image and convert to data URL (returns null if fetch blocked)
+  async function fetchToDataUrl(url) {
+    try {
+      const res = await fetch(url, { mode: 'cors' });
+      if (!res.ok) throw new Error('fetch failed ' + res.status);
+      const blob = await res.blob();
+      return await new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onloadend = () => resolve(r.result); // "data:<mime>;base64,..."
+        r.onerror = reject;
+        r.readAsDataURL(blob);
+      });
+    } catch (err) {
+      return null;
+    }
+  }
+
+  // mark images that couldn't be embedded so user can replace
+  function markBroken(img) {
+    img.style.outline = '3px dashed #ff4d4f';
+    img.title = 'Image could not be embedded. Please upload or replace.';
+    img.dataset.missingImage = '1';
+  }
+
+  editor.addEventListener('paste', async (e) => {
+    e.preventDefault();
+    const clipboard = e.clipboardData || window.clipboardData;
+    if (!clipboard) return;
+
+    // 1) If clipboard contains image files, read & insert them (preferred)
+    const items = clipboard.items || [];
+    let insertedFile = false;
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (it && it.type && it.type.indexOf('image') === 0) {
+        const file = it.getAsFile();
+        if (!file) continue;
+        const dataUrl = await new Promise((res, rej) => {
+          const r = new FileReader();
+          r.onloadend = () => res(r.result);
+          r.onerror = rej;
+          r.readAsDataURL(file);
         });
+        document.execCommand('insertHTML', false, `<img src="${dataUrl}" alt="pasted-image" />`);
+        insertedFile = true;
       }
+    }
+    if (insertedFile) {
+      // update state/preview
+      if (typeof updatePreview === 'function') { body = editor.innerHTML; updatePreview(); }
+      return;
+    }
 
-      // select template
-      function selectTemplate(id) {
-        const t = TEMPLATES.find((x) => x.id === id);
-        if (!t) return;
-        title = t.title;
-        subject = t.subject;
-        body = t.body;
-        document.getElementById("title").value = title;
-        document.getElementById("subject").value = subject;
-        document.getElementById("body").value = body;
-        updatePreview();
-        document.querySelectorAll(".template-card").forEach((el) => el.classList.remove("active"));
-        event?.currentTarget?.classList?.add("active");
-      }
+    // 2) No image files — prefer HTML paste (keeps formatting)
+    const html = clipboard.getData && clipboard.getData('text/html');
+    const text = clipboard.getData && clipboard.getData('text/plain');
+    if (html) {
+      document.execCommand('insertHTML', false, html);
+    } else if (text) {
+      document.execCommand('insertText', false, text);
+    }
 
-      function updatePreview() {
-        const preview = document.getElementById("livePreview");
-        const signature = bestRegards || "— Team";
-        const html = `<div><strong>${subject}</strong><div style="margin-top:.6rem">${body || ""}</div><div style="margin-top:1rem">${signature}</div></div>`;
-        preview.innerHTML = html;
-        document.getElementById("recipientsCount").innerText = contactsList.length;
-        document.getElementById("serviceLabel").innerText = emailService || "-";
-        document.getElementById("fromLabel").innerText = senderName && emailAddress ? `${senderName} <${emailAddress}>` : "-";
-      }
-
-      // Wire inputs to state
-      document.getElementById("senderName").addEventListener("input", (e) => {
-        senderName = e.target.value;
-        updatePreview();
-      });
-      document.getElementById("emailService").addEventListener("change", (e) => {
-        emailService = e.target.value;
-        updatePreview();
-      });
-      document.getElementById("emailAddress").addEventListener("input", (e) => {
-        emailAddress = e.target.value;
-        updatePreview();
-      });
-      document.getElementById("passwordService").addEventListener("input", (e) => {
-        passwordService = e.target.value;
-      });
-      document.getElementById("subject").addEventListener("input", (e) => {
-        subject = e.target.value;
-        updatePreview();
-      });
-      document.getElementById("title").addEventListener("input", (e) => {
-        title = e.target.value;
-      });
-      document.getElementById("body").addEventListener("input", (e) => {
-        body = e.target.value;
-        updatePreview();
-      });
-      document.getElementById("bestRegards").addEventListener("input", (e) => {
-        bestRegards = e.target.value;
-        updatePreview();
-      });
-
-      // Quick variable buttons
-      document.querySelectorAll(".btn-variable").forEach((b) => {
-        b.addEventListener("click", () => {
-          const v = b.dataset.var;
-          const ta = document.getElementById("body");
-          ta.value = ta.value + "\n" + v;
-          body = ta.value;
-          updatePreview();
-        });
-      });
-
-      // CSV import parser
-      document.getElementById("importContactsBtn").addEventListener("click", () => {
-        const f = document.getElementById("contactsFile").files[0];
-        if (!f) return alert("Please choose a CSV file first.");
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          const text = e.target.result;
-          parseCSVContacts(text);
-        };
-        reader.readAsText(f);
-      });
-
-      function parseCSVContacts(csvText) {
-        const lines = csvText.split(/\r?\n/).filter(Boolean);
-        const header = lines.shift().split(",").map((h) => h.trim());
-        const emailIndex = header.findIndex((h) => h.toLowerCase() === "email");
-        const firstNameIndex = header.findIndex((h) => h.toLowerCase() === "firstname" || h.toLowerCase() === "first_name");
-        const lastNameIndex = header.findIndex((h) => h.toLowerCase() === "lastname" || h.toLowerCase() === "last_name");
-        if (emailIndex === -1) {
-          alert('CSV must contain an "email" column');
-          return;
-        }
-        contactsList = lines.map((l) => {
-          const cols = l.split(",");
-          return {
-            email: cols[emailIndex]?.trim(),
-            firstName: cols[firstNameIndex]?.trim(),
-            lastName: cols[lastNameIndex]?.trim(),
-          };
-        }).filter((c) => c.email);
-        renderContactsPreview();
-        updatePreview();
-      }
-
-      function renderContactsPreview() {
-        const ul = document.getElementById("contactsPreview");
-        ul.innerHTML = "";
-        contactsList.slice(0, 20).forEach((c) => {
-          const li = document.createElement("li");
-          li.textContent = c.email + (c.firstName ? ` — ${c.firstName}` : "");
-          ul.appendChild(li);
-        });
-      }
-
-      function disableControls(disabled) {
-        const sendBtn = document.getElementById("sendBtn");
-        if (sendBtn) sendBtn.disabled = disabled;
-        const saveBtn = document.getElementById("saveTemplateBtn");
-        if (saveBtn) saveBtn.disabled = disabled;
-        const previewBtn = document.getElementById("previewBtn");
-        if (previewBtn) previewBtn.disabled = disabled;
-      }
-
-      // ----------------------
-      // Main dashboard sender
-      // ----------------------
-      async function sendCampaignMain() {
-        // Basic validation/state sync
-        if (!emailAddress) return alert("Please configure sender email.");
-        if (contactsList.length === 0) return alert("No recipients loaded. Import a contacts CSV first.");
-        if (!subject && !title) {
-          if (!confirm("No subject set. Continue?")) return;
-        }
-
-        const contacts = contactsList.map((c) => c?.email?.trim()).filter(Boolean);
-
-        // read selected provider and map smtp -> webmail
-        const rawProvider = (document.getElementById("emailService") || {}).value || emailService || "webmail";
-        const provider = rawProvider === "smtp" ? "webmail" : rawProvider;
-        const pass = passwordService ? passwordService : undefined;
-
-        // debug
-        console.log("sendCampaignMain -> provider:", provider, "user:", emailAddress ? "[provided]" : "[none]", "contacts:", contacts.length);
-
-        const payload = {
-          provider,
-          user: emailAddress,
-          ...(pass ? { pass } : {}),
-          subject,
-          body,
-          contacts,
-        };
-
-        // UI progress
-        const progressWrap = document.getElementById("campaignProgress");
-        const progressText = document.getElementById("progressText");
-        const progressBar = document.getElementById("progressBar");
-        if (progressWrap) progressWrap.style.display = "block";
-        if (progressBar) {
-          progressBar.style.width = "0%";
-          progressBar.textContent = "0%";
-        }
-        if (progressText) progressText.textContent = "Sending campaign...";
-        disableControls(true);
-
-        try {
-          const res = await fetch("/api/bulkemail/campaign", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-          });
-
-          if (!res.ok) {
-            const err = await res.json().catch(() => ({ error: res.statusText }));
-            throw new Error(err.error || res.statusText || "Send failed");
-          }
-
-          const json = await res.json();
-
-          if (json.total) {
-            const pct = Math.round(((json.sent || 0) / json.total) * 100);
-            if (progressBar) {
-              progressBar.style.width = pct + "%";
-              progressBar.textContent = pct + "%";
-            }
-            if (progressText) progressText.textContent = `Sent ${json.sent || 0} / ${json.total}. Failed: ${json.failed || 0}`;
-          } else {
-            if (progressBar) {
-              progressBar.style.width = "100%";
-              progressBar.textContent = "100%";
-            }
-            if (progressText) progressText.textContent = json.message || "Campaign accepted.";
-          }
-
-          console.log("Campaign response:", json);
-          alert("Campaign processed. See console for server response.");
-        } catch (err) {
-          console.error("Campaign error:", err);
-          console.log("Demo fallback payload:", payload);
-          alert("Demo: payload prepared. Open console (F12) to inspect object. Integrate /api/bulkemail/campaign on server to actually dispatch emails.");
-          if (progressText) progressText.textContent = "Failed to send campaign.";
-        } finally {
-          disableControls(false);
+    // small delay to let DOM update, then try embedding remote images
+    setTimeout(async () => {
+      const imgs = Array.from(editor.querySelectorAll('img'));
+      for (const img of imgs) {
+        const src = img.getAttribute('src') || '';
+        if (!src) continue;
+        if (src.startsWith('data:') || src.startsWith('blob:') || src.startsWith('cid:')) continue;
+        // Try to fetch and convert to data URL
+        const dataUrl = await fetchToDataUrl(src);
+        if (dataUrl) {
+          img.setAttribute('src', dataUrl);
+        } else {
+          // likely protected (googleusercontent) or CORS blocked — mark so user can replace
+          markBroken(img);
         }
       }
+      // final update
+      if (typeof updatePreview === 'function') { body = editor.innerHTML; updatePreview(); }
+    }, 150);
+  });
+})();
 
-      // ----------------------
-      // Widget sender (compact widget at bottom)
-      // ----------------------
-      async function sendCampaignWidget() {
-        const btn = document.getElementById("sendCampaignBtn");
-        if (btn) btn.disabled = true;
-        updateStatus("Preparing...");
+  // Main dashboard sender
+  // ----------------------
+  async function sendCampaignMain() {
+    if (!emailAddress) return alert("Please configure sender email.");
+    if (contactsList.length === 0) return alert("No recipients loaded. Import a contacts file first.");
+    if (!subject && !title) {
+      if (!confirm("No subject set. Continue?")) return;
+    }
 
-        try {
-          const subjectInput = (document.getElementById("subjectInput") || {}).value || "";
-          const editorEl = document.getElementById("editorBody");
-          const widgetBody = editorEl ? editorEl.innerHTML : (document.getElementById("bodyInput") || {}).value || "";
+    const contacts = contactsList.map((c) => c?.email?.trim()).filter(Boolean);
 
-          if (!subjectInput || !widgetBody) {
-            alert("Please provide both a subject and a body.");
-            if (btn) btn.disabled = false;
-            return;
-          }
+    const rawProvider = (document.getElementById("emailService") || {}).value || emailService || "webmail";
+    const provider = rawProvider === "smtp" ? "webmail" : rawProvider;
+    const pass = passwordService ? passwordService : undefined;
 
-          updateStatus("Gathering contacts...");
-          const contacts = await gatherContacts();
-          console.log("widget contacts", contacts);
-          if (!contacts.length) {
-            alert("No contacts found. Upload a CSV or paste emails into the textarea.");
-            if (btn) btn.disabled = false;
-            return;
-          }
+    // Take the HTML directly from the editor
+    const editorHtml = getBodyHtml();
 
-          if (!confirm("Send to " + contacts.length + " contacts? Click OK to proceed.")) {
-            if (btn) btn.disabled = false;
-            return;
-          }
+    // Build a basic outgoing wrapper (server should still sanitize & inline CSS)
+    const outgoingHtml = `
+      <!doctype html>
+      <html>
+      <head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/></head>
+      <body style="margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;background:#f5f7fb;color:#222;">
+        <div style="padding:18px;background:#ffffff;">
+          <div style="border-bottom:1px solid #eee;padding-bottom:10px;margin-bottom:12px">
+            <strong style="color:#0d6efd">${escapeHtml(senderName || 'Company Name')}</strong>
+          </div>
+          ${editorHtml}
+          <div style="margin-top:18px;color:#6c757d">${escapeHtml(bestRegards || '— Team')}</div>
+        </div>
+      </body>
+      </html>
+    `;
 
-          updateStatus("Sending...");
+    const payload = {
+      provider,
+      user: emailAddress,
+      ...(pass ? { pass } : {}),
+      subject,
+      body: outgoingHtml,
+      contacts,
+    };
 
-          // provider mapping
-          const rawProvider = (document.getElementById("emailService") || {}).value || emailService || "webmail";
-          const provider = rawProvider === "smtp" ? "webmail" : rawProvider;
-          const user = (document.getElementById("emailAddress") || {}).value || undefined;
-          const pass = (document.getElementById("passwordService") || {}).value || undefined;
+    const progressWrap = document.getElementById("campaignProgress");
+    const progressText = document.getElementById("progressText");
+    const progressBar = document.getElementById("progressBar");
+    if (progressWrap) progressWrap.style.display = "block";
+    if (progressBar) {
+      progressBar.style.width = "0%";
+      progressBar.textContent = "0%";
+    }
+    if (progressText) progressText.textContent = "Sending campaign...";
+    disableControls(true);
 
-          console.log("sendCampaignWidget -> provider:", provider, "user present:", !!user, "contacts:", contacts.length);
+    try {
+      const res = await fetch("/api/bulkemail/campaign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
 
-          const payload = {
-            provider,
-            ...(user ? { user } : {}),
-            ...(pass ? { pass } : {}),
-            subject: subjectInput,
-            body: widgetBody,
-            contacts,
-          };
-
-          const res = await fetch("/api/bulkemail/campaign", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-          });
-
-          if (!res.ok) {
-            const txt = await res.text();
-            console.error("Server error response:", txt);
-            alert("Server error: " + res.status + " — see console for details.");
-            updateStatus("Error");
-            if (btn) btn.disabled = false;
-            return;
-          }
-
-          const data = await res.json();
-          console.log("Campaign send results:", data);
-
-          const ok = data.results ? data.results.filter((r) => r.ok).length : 0;
-          const failed = data.results ? data.results.length - ok : 0;
-          updateStatus("Done: " + ok + " success, " + failed + " failed.");
-          alert("Campaign complete. Success: " + ok + ", Failed: " + failed + ". Check console for details.");
-        } catch (err) {
-          console.error("sendCampaignWidget error", err);
-          alert("Error sending campaign: " + (err && err.message ? err.message : err));
-          updateStatus("Error");
-        } finally {
-          const btn = document.getElementById("sendCampaignBtn");
-          if (btn) btn.disabled = false;
-        }
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(err.error || res.statusText || "Send failed");
       }
 
-      // ----- small CSV helpers used by widget -----
-      function parseCSVTextToEmails(text) {
-        const emails = [];
-        const lines = text.split(/\r?\n/);
-        for (const line of lines) {
-          if (!line) continue;
-          const parts = line.split(/[,;\t]+/);
-          for (const p of parts) {
-            const candidate = p.trim().replace(/^"|"$/g, "");
-            if (candidate && candidate.includes("@") && candidate.indexOf(" ") === -1) {
-              emails.push(candidate);
-              break;
-            }
-          }
-        }
-        return emails;
+      const json = await res.json();
+
+      if (json.total) {
+        const pct = Math.round(((json.sent || 0) / json.total) * 100);
+        if (progressBar) { progressBar.style.width = pct + "%"; progressBar.textContent = pct + "%"; }
+        if (progressText) progressText.textContent = `Sent ${json.sent || 0} / ${json.total}. Failed: ${json.failed || 0}`;
+      } else {
+        if (progressBar) { progressBar.style.width = "100%"; progressBar.textContent = "100%"; }
+        if (progressText) progressText.textContent = json.message || "Campaign accepted.";
       }
 
-      async function fileToEmails(file) {
-        if (!file) return [];
-        const text = await file.text();
-        return parseCSVTextToEmails(text);
+      console.log("Campaign response:", json);
+      alert("Campaign processed. See console for server response.");
+    } catch (err) {
+      console.error("Campaign error:", err);
+      console.log("Demo fallback payload:", payload);
+      alert("Demo: payload prepared. Open console (F12) to inspect object. Integrate /api/bulkemail/campaign on server to actually dispatch emails.");
+      if (progressText) progressText.textContent = "Failed to send campaign.";
+    } finally {
+      disableControls(false);
+    }
+  }
+
+  // ----------------------
+  // Widget sender (compact widget at bottom)
+  // ----------------------
+  async function sendCampaignWidget() {
+    const btn = document.getElementById("sendCampaignBtn");
+    if (btn) btn.disabled = true;
+    updateStatus("Preparing...");
+
+    try {
+      const subjectInput = (document.getElementById("subjectInput") || {}).value || "";
+      const editorEl = document.getElementById("editorBody");
+      const widgetBody = editorEl ? editorEl.innerHTML : (document.getElementById("bodyInput") || {}).value || "";
+
+      if (!subjectInput || !widgetBody) {
+        alert("Please provide both a subject and a body.");
+        if (btn) btn.disabled = false;
+        return;
       }
 
-      async function gatherContacts() {
-        const fileInput = document.getElementById("csvFileInput");
-        const textarea = document.getElementById("contactsTextarea");
+      updateStatus("Gathering contacts...");
+      const contacts = await gatherContacts();
+      console.log("widget contacts", contacts);
+      if (!contacts.length) {
+        alert("No contacts found. Upload a file or paste emails into the textarea.");
+        if (btn) btn.disabled = false;
+        return;
+      }
 
-        if (fileInput && fileInput.files && fileInput.files.length) {
-          try {
-            const arr = await fileToEmails(fileInput.files[0]);
-            return arr;
-          } catch (err) {
-            console.error("CSV parse error", err);
-            return [];
-          }
+      if (!confirm("Send to " + contacts.length + " contacts? Click OK to proceed.")) {
+        if (btn) btn.disabled = false;
+        return;
+      }
+
+      updateStatus("Sending...");
+
+      const rawProvider = (document.getElementById("emailService") || {}).value || emailService || "webmail";
+      const provider = rawProvider === "smtp" ? "webmail" : rawProvider;
+      const user = (document.getElementById("emailAddress") || {}).value || undefined;
+      const pass = (document.getElementById("passwordService") || {}).value || undefined;
+
+      console.log("sendCampaignWidget -> provider:", provider, "user present:", !!user, "contacts:", contacts.length);
+
+      const payload = {
+        provider,
+        ...(user ? { user } : {}),
+        ...(pass ? { pass } : {}),
+        subject: subjectInput,
+        body: widgetBody,
+        contacts,
+      };
+
+      const res = await fetch("/api/bulkemail/campaign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const txt = await res.text();
+        console.error("Server error response:", txt);
+        alert("Server error: " + res.status + " — see console for details.");
+        updateStatus("Error");
+        if (btn) btn.disabled = false;
+        return;
+      }
+
+      const data = await res.json();
+      console.log("Campaign send results:", data);
+
+      const ok = data.results ? data.results.filter((r) => r.ok).length : 0;
+      const failed = data.results ? data.results.length - ok : 0;
+      updateStatus("Done: " + ok + " success, " + failed + " failed.");
+      alert("Campaign complete. Success: " + ok + ", Failed: " + failed + ". Check console for details.");
+    } catch (err) {
+      console.error("sendCampaignWidget error", err);
+      alert("Error sending campaign: " + (err && err.message ? err.message : err));
+      updateStatus("Error");
+    } finally {
+      const btn = document.getElementById("sendCampaignBtn");
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  // ----- small CSV helpers used by widget -----
+  function parseCSVTextToEmails(text) {
+    const emails = [];
+    const lines = text.split(/\r?\n/);
+    for (const line of lines) {
+      if (!line) continue;
+      const parts = line.split(/[,;\t]+/);
+      for (const p of parts) {
+        const candidate = p.trim().replace(/^"|"$/g, "");
+        if (candidate && candidate.includes("@") && candidate.indexOf(" ") === -1) {
+          emails.push(candidate);
+          break;
         }
+      }
+    }
+    return emails;
+  }
 
-        if (textarea && textarea.value.trim()) {
-          const raw = textarea.value.trim();
-          const arr = raw.split(/[,\r\n]+/).map((s) => s.trim()).filter(Boolean);
-          return arr.filter((s) => s.includes("@"));
-        }
+  async function fileToEmails(file) {
+    if (!file) return [];
+    const ext = file.name.split(".").pop().toLowerCase();
+    try {
+      const text = await fileToText(file, ext);
+      // unify parsing for CSV/TXT/DOCX
+      if (!text) return [];
+      const found = [...(text.matchAll(EMAIL_REGEX) || [])].map(m => m[0]);
+      if (found.length) return found;
+      // Fallback: try csv parsing
+      return parseCSVTextToEmails(text);
+    } catch (err) {
+      console.error("fileToEmails error", err);
+      return [];
+    }
+  }
 
+  async function gatherContacts() {
+    const fileInput = document.getElementById("csvFileInput") || document.getElementById("contactsFile");
+    const textarea = document.getElementById("contactsTextarea");
+
+    if (fileInput && fileInput.files && fileInput.files.length) {
+      try {
+        const arr = await fileToEmails(fileInput.files[0]);
+        return arr;
+      } catch (err) {
+        console.error("file parse error", err);
         return [];
       }
+    }
 
-      function updateStatus(msg) {
-        const el = document.getElementById("sendStatus");
-        if (el) el.textContent = msg || "";
-      }
+    if (textarea && textarea.value.trim()) {
+      const raw = textarea.value.trim();
+      const arr = raw.split(/[,\r\n]+/).map((s) => s.trim()).filter(Boolean);
+      return arr.filter((s) => s.includes("@"));
+    }
 
-      // Preview contacts (widget)
-      document.getElementById("previewContactsBtn")?.addEventListener("click", async (e) => {
+    return [];
+  }
+
+  function updateStatus(msg) {
+    const el = document.getElementById("sendStatus");
+    if (el) el.textContent = msg || "";
+  }
+
+  // Preview contacts (widget)
+  document.getElementById("previewContactsBtn")?.addEventListener("click", async (e) => {
+    e.preventDefault();
+    const contacts = await gatherContacts();
+    if (!contacts.length) {
+      alert("No contacts found. Upload a file or paste emails in the textarea.");
+      return;
+    }
+    const preview = contacts.slice(0, 200).join("\n");
+    const previewWindow = window.open("", "", "width=600,height=400,scrollbars=yes");
+    previewWindow.document.write("<pre>" + escapeHtml(preview).replace(/</g, "&lt;") + "</pre>");
+  });
+
+  // Attach main SendNow and widget bindings once DOM is ready
+  document.addEventListener("DOMContentLoaded", () => {
+    // Bind main Send Now
+    const sendNowEl = document.getElementById("sendBtn");
+    if (sendNowEl) {
+      sendNowEl.addEventListener("click", (e) => {
         e.preventDefault();
-        const contacts = await gatherContacts();
-        if (!contacts.length) {
-          alert("No contacts found. Upload CSV or paste emails in the textarea.");
-          return;
-        }
-        const preview = contacts.slice(0, 200).join("\n");
-        const previewWindow = window.open("", "", "width=600,height=400,scrollbars=yes");
-        previewWindow.document.write("<pre>" + preview.replace(/</g, "&lt;") + "</pre>");
+        const rawProvider = (document.getElementById("emailService") || {}).value;
+        console.log("Send Now clicked — selected provider:", rawProvider);
+        emailService = rawProvider || emailService;
+        sendCampaignMain();
       });
+    }
 
-      // Attach main SendNow and widget bindings once DOM is ready
-      document.addEventListener("DOMContentLoaded", () => {
-        // Bind main Send Now
-        const sendNowEl = document.getElementById("sendBtn");
-        if (sendNowEl) {
-          sendNowEl.addEventListener("click", (e) => {
-            e.preventDefault();
-            const rawProvider = (document.getElementById("emailService") || {}).value;
-            console.log("Send Now clicked — selected provider:", rawProvider);
-            // sync state
-            emailService = rawProvider || emailService;
-            sendCampaignMain();
-          });
-        }
+    // Bind widget send
+    const widgetBtn = document.getElementById("sendCampaignBtn");
+    if (widgetBtn) {
+      widgetBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        sendCampaignWidget();
+      });
+    }
 
-        // Bind widget send
-        const widgetBtn = document.getElementById("sendCampaignBtn");
-        if (widgetBtn) {
-          widgetBtn.addEventListener("click", (e) => {
-            e.preventDefault();
-            sendCampaignWidget();
-          });
-        }
-
-        // Save template button
-        const saveBtn = document.getElementById("saveTemplateBtn");
-        if (saveBtn) {
-          saveBtn.addEventListener("click", () => {
-            const id = "tpl_" + Date.now();
-            TEMPLATES.push({ id, name: title || "Untitled", title, subject, body });
-            renderTemplates();
-            alert("Template saved (in-memory). Persist templates on the server to keep them.");
-          });
-        }
-
-        // Preview button
-        const previewBtn = document.getElementById("previewBtn");
-        if (previewBtn) {
-          previewBtn.addEventListener("click", () => {
-            const win = window.open("", "_blank", "width=700,height=600");
-            win.document.write('<html><head><title>Preview</title></head><body style="font-family:Arial,Helvetica,sans-serif;padding:20px">');
-            win.document.write("<h4>" + (subject || "No subject") + "</h4>");
-            win.document.write(body || "<i>No message body</i>");
-            win.document.write("<hr/><div>" + (bestRegards || "") + "</div>");
-            win.document.write("</body></html>");
-            win.document.close();
-          });
-        }
-
+    // Save template button - save innerHTML as template body
+    const saveBtn = document.getElementById("saveTemplateBtn");
+    if (saveBtn) {
+      saveBtn.addEventListener("click", () => {
+        const id = "tpl_" + Date.now();
+        const tplBody = getBodyHtml();
+        TEMPLATES.push({ id, name: title || "Untitled", title, subject, body: tplBody });
         renderTemplates();
-        updatePreview();
+        alert("Template saved (in-memory). Persist templates on the server to keep them.");
       });
-    </script>
+    }
+
+    // Preview button - open a full preview window showing subject + editor HTML
+    const previewBtn = document.getElementById("previewBtn");
+    if (previewBtn) {
+      previewBtn.addEventListener("click", () => {
+        const win = window.open("", "_blank", "width=900,height=700");
+        const editorHtml = getBodyHtml() || "";
+        win.document.write(`
+          <html>
+            <head><title>Preview</title></head>
+            <body style="font-family:Arial,Helvetica,sans-serif;padding:20px;background:#f5f7fb">
+              <div style="max-width:760px;margin:0 auto;background:#fff;padding:18px;">
+                <h4>${escapeHtml(subject || "No subject")}</h4>
+                <div>${editorHtml}</div>
+                <hr/>
+                <div>${escapeHtml(bestRegards || "")}</div>
+              </div>
+            </body>
+          </html>
+        `);
+        win.document.close();
+      });
+    }
+
+    renderTemplates();
+    updatePreview();
+  });
+</script>
+
     <!-- ===== End widget ===== -->
   </body>
 </html>
