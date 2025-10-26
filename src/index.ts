@@ -3,7 +3,7 @@ import dotenv from "dotenv";
 import session from "express-session";
 import path from "path";
 import cors from "cors";
-import proxyImages from "./routes/proxyImages"; // adjust path as needed
+import proxyImages from "./routes/proxyImages";
 import connectDb from "./config/connectDb";
 import authRoutes from "./routes/authRoutes";
 import dashboardRoutes from "./routes/dashboardRoutes";
@@ -13,7 +13,6 @@ import activityRouter from "./routes/activity";
 import userDetailsRoute from "./routes/userDetails";
 import messagesRouter from "./routes/messages";
 import campaignRoutes from "./routes/campaign";
-
 
 dotenv.config();
 connectDb();
@@ -32,12 +31,11 @@ app.use(
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ limit: "10mb", extended: true }));
 
-
 // Log incoming content-length for debugging 413 issues (optional — remove in production)
 app.use((req: Request, _res: Response, next: NextFunction) => {
-const length = req.headers['content-length'];
-if (length) console.log(`📦 Incoming content-length: ${length} bytes`);
-next();
+  const length = req.headers["content-length"];
+  if (length) console.log(`📦 Incoming content-length: ${length} bytes`);
+  next();
 });
 
 // ✅ Sessions
@@ -62,7 +60,6 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 
 app.use("/api/bulkemail", bulkEmailRoutes);
 
-
 // ---------- VIEW ENGINE ----------
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
@@ -79,7 +76,6 @@ app.get("/", (req: Request, res: Response) => {
 
 app.use("/api/bulkemail", campaignRoutes);
 
-
 // 🧭 Mount modular routes (recommended order)
 app.use("/", authRoutes);
 
@@ -90,14 +86,10 @@ app.use("/api/admin/activity", activityRouter);
 app.use("/", userDetailsRoute);
 app.use("/api/admin/messages", messagesRouter);
 
-
-
 // Logout & 404
 app.get("/logout", (req: Request, res: Response) => {
   req.session.destroy(() => res.redirect("/"));
 });
-
-
 
 // ---------- FALLBACK ----------
 app.all("*", (req: Request, res: Response) => {

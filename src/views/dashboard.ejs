@@ -35,14 +35,45 @@
       /* make contenteditable look like a form control on small screens */
       #body[contenteditable="true"] {
         min-height: 250px;
-        background:#fff;
-        overflow:auto;
-        padding:10px;
-        border:1px solid #ccc;
-        border-radius:4px;
+        background: #fff;
+        overflow: auto;
+        padding: 10px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
       }
-      /* Live preview scroll */
-      #livePreview { max-height: 520px; overflow:auto; }
+      /* Live preview frame */
+      #livePreviewContainer {
+        background: #ffffff;
+        border: 1px solid #dee2e6;
+        border-radius: 0.5rem;
+        overflow: hidden;
+      }
+      #livePreviewFrame {
+        width: 100%;
+        min-height: 240px;
+        border: 0;
+        background: #ffffff;
+      }
+      .preview-meta {
+        background: linear-gradient(135deg, rgba(13,110,253,0.08), rgba(13,110,253,0.02));
+        border: 1px solid rgba(13,110,253,0.12);
+        border-radius: 0.5rem;
+        padding: 12px 16px;
+        margin-bottom: 12px;
+      }
+      .preview-meta .preview-sender {
+        font-weight: 600;
+        color: #0d6efd;
+      }
+      .preview-meta .preview-email {
+        font-size: 0.85rem;
+        color: #6c757d;
+      }
+      .preview-meta .preview-subject {
+        margin-top: 6px;
+        font-weight: 600;
+        color: #111827;
+      }
     </style>
   </head>
   <body>
@@ -86,7 +117,8 @@
               class="form-control form-control-sm"
             />
             <div class="form-text small-muted">
-              Upload a CSV, TXT or DOCX file — emails will be extracted automatically.
+              Upload a CSV, TXT or DOCX file — emails will be extracted
+              automatically.
             </div>
           </div>
           <div class="mb-2">
@@ -242,16 +274,32 @@
                     <label class="form-label">Body (HTML allowed)</label>
 
                     <!-- CONTENTEDITABLE: preserves pasted HTML, inline styles, tables, etc. -->
-                    <div 
+                    <div
                       id="body"
                       class="form-control"
                       contenteditable="true"
-                      style="min-height:250px; background:#fff; overflow:auto; padding:10px; border:1px solid #ccc;"
-                      placeholder="Paste or type your email content here (supports full HTML formatting)">
-                      <p>Hello <strong>{{ firstName }}</strong>,</p>
-                      <p>Welcome — paste or type your HTML here. Images pasted will attempt to embed as data URLs.</p>
+                      style="
+                        min-height: 250px;
+                        background: #fff;
+                        overflow: auto;
+                        padding: 10px;
+                        border: 1px solid #ccc;
+                      "
+                      placeholder="Paste or type your email content here (supports full HTML formatting)"
+                    >
+                      <p>
+                        Hello <strong>{{ firstName }}</strong
+                        >,
+                      </p>
+                      <p>
+                        Welcome — paste or type your HTML here. Images pasted
+                        will attempt to embed as data URLs.
+                      </p>
                     </div>
-                    <small class="form-text text-muted">Paste directly from Word, Gmail, or any email builder — all formatting and colors are preserved.</small>
+                    <small class="form-text text-muted"
+                      >Paste directly from Word, Gmail, or any email builder —
+                      all formatting and colors are preserved.</small
+                    >
 
                     <div class="form-text small-muted">
                       Use placeholders like {{ firstName }} to personalize.
@@ -296,11 +344,17 @@
               <div class="card mb-3">
                 <div class="card-body">
                   <h6 class="fw-semibold">Live Preview</h6>
-                  <div
-                    id="livePreview"
-                    class="border rounded p-3"
-                    style="background: #fff; min-height: 220px"
-                  ></div>
+                  <div class="preview-meta">
+                    <div class="preview-sender" id="previewSenderLabel">Company Name</div>
+                    <div class="preview-email" id="previewSenderEmailLabel">you@company.com</div>
+                    <div class="preview-subject" id="previewSubjectLabel">Subject line</div>
+                  </div>
+                  <div id="livePreviewContainer">
+                    <iframe
+                      id="livePreviewFrame"
+                      title="Email live preview"
+                    ></iframe>
+                  </div>
                 </div>
               </div>
 
@@ -321,7 +375,11 @@
                   </ul>
                   <br />
                   <form action="/logout" method="get">
-                    <button type="submit" id="logoutBtn" class="btn btn-primary">
+                    <button
+                      type="submit"
+                      id="logoutBtn"
+                      class="btn btn-primary"
+                    >
                       Log Out
                     </button>
                   </form>
@@ -339,718 +397,993 @@
 
     <!-- ================== FULL CLIENT SCRIPT ================== -->
     <script>
-  // ------------------------
-  // Client-side logic (preserve HTML in contenteditable)
-  // ------------------------
+      // ------------------------
+      // Client-side logic (preserve HTML in contenteditable)
+      // ------------------------
 
-  let senderName = "";
-  let emailService = "";
-  let emailAddress = "";
-  let passwordService = "";
-  let subject = "";
-  let title = "";
-  let body = ""; // kept for backward compatibility but we prefer bodyHtml from DOM
-  let bestRegards = "";
-  let contactsList = []; // array of {email, firstName?, lastName?}
-  let scheduleTime = null;
+      let senderName = "";
+      let emailService = "";
+      let emailAddress = "";
+      let passwordService = "";
+      let subject = "";
+      let title = "";
+      let body = ""; // kept for backward compatibility but we prefer bodyHtml from DOM
+      let bestRegards = "";
+      let contactsList = []; // array of {email, firstName?, lastName?}
+      let scheduleTime = null;
 
-  const TEMPLATES = [
-    { id: "welcome", name: "Welcome - Short", subject: "Welcome to our community!", title: "Welcome Short", body: "<p>Hello {{firstName}},</p><p>Welcome! We're excited to have you.</p><p>{{bestRegards}}</p>" },
-    { id: "promo", name: "Promotional", subject: "Limited time offer — don't miss out", title: "Promo", body: "<h3>Special Offer</h3><p>Hi {{firstName}}, check this out.</p><p>{{bestRegards}}</p>" },
-    { id: "newsletter", name: "Monthly Newsletter", subject: "This month at a glance", title: "Newsletter", body: "<p>Dear {{firstName}},</p><p>Here is what's new.</p><p>{{bestRegards}}</p>" },
-  ];
+      const TEMPLATES = [
+        {
+          id: "welcome",
+          name: "Welcome - Short",
+          subject: "Welcome to our community!",
+          title: "Welcome Short",
+          body: "<p>Hello {{firstName}},</p><p>Welcome! We're excited to have you.</p><p>{{bestRegards}}</p>",
+        },
+        {
+          id: "promo",
+          name: "Promotional",
+          subject: "Limited time offer — don't miss out",
+          title: "Promo",
+          body: "<h3>Special Offer</h3><p>Hi {{firstName}}, check this out.</p><p>{{bestRegards}}</p>",
+        },
+        {
+          id: "newsletter",
+          name: "Monthly Newsletter",
+          subject: "This month at a glance",
+          title: "Newsletter",
+          body: "<p>Dear {{firstName}},</p><p>Here is what's new.</p><p>{{bestRegards}}</p>",
+        },
+      ];
 
-  // Helpers
-  function getBodyHtml() {
-    const el = document.getElementById("body");
-    return el ? el.innerHTML : "";
-  }
-  function setBodyHtml(html) {
-    const el = document.getElementById("body");
-    if (el) el.innerHTML = html || "";
-    body = getBodyHtml();
-    updatePreview();
-  }
-
-  function escapeHtml(str) {
-    if (!str) return "";
-    return String(str).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');
-  }
-
-  // Render templates
-  const templatesListEl = document.getElementById("templatesList");
-  function renderTemplates() {
-    if (!templatesListEl) return;
-    templatesListEl.innerHTML = "";
-    TEMPLATES.forEach((t) => {
-      const btn = document.createElement("button");
-      btn.className = "list-group-item list-group-item-action template-card";
-      btn.innerHTML = `<div class="d-flex justify-content-between align-items-center"><div>${t.name}</div><small class="text-muted">${t.title}</small></div>`;
-      btn.addEventListener("click", () => selectTemplate(t.id, btn));
-      templatesListEl.appendChild(btn);
-    });
-  }
-
-  function selectTemplate(id, btnEl) {
-    const t = TEMPLATES.find((x) => x.id === id);
-    if (!t) return;
-    title = t.title;
-    subject = t.subject;
-    // Insert HTML directly into contenteditable
-    setBodyHtml(t.body || "");
-    const titleEl = document.getElementById("title");
-    const subjectEl = document.getElementById("subject");
-    if (titleEl) titleEl.value = title;
-    if (subjectEl) subjectEl.value = subject;
-    document.querySelectorAll(".template-card").forEach((el) => el.classList.remove("active"));
-    if (btnEl) btnEl.classList.add("active");
-  }
-
-  function updatePreview() {
-    const previewEl = document.getElementById("livePreview");
-    if (!previewEl) return;
-    const signature = bestRegards || "— Team";
-
-    // Get raw editor HTML (preserve as-is)
-    let editorHtml = getBodyHtml() || "";
-
-    // If the editorHtml is empty but 'body' variable has plain text, convert to minimal HTML
-    if (!editorHtml.trim() && body && body.trim()) {
-      // escape then newline-><br>
-      editorHtml = escapeHtml(body).replace(/\n/g, "<br>");
-    }
-
-    // Replace some placeholders for preview only (so user sees personalized example)
-    editorHtml = editorHtml.replaceAll("{{ firstName }}", "Friend").replaceAll("{{firstName}}", "Friend");
-    editorHtml = editorHtml.replaceAll("{{ lastName }}", "Customer").replaceAll("{{lastName}}", "Customer");
-    editorHtml = editorHtml.replaceAll("{{bestRegards}}", escapeHtml(signature));
-
-    // Build preview wrapper (simple)
-    const wrapper = `
-      <div style="font-family:Arial,Helvetica,sans-serif;background:#ffffff;color:#222;padding:12px;">
-        <div style="border-bottom:1px solid #eee;padding-bottom:10px;margin-bottom:12px;">
-          <strong style="color:#0d6efd">${escapeHtml(senderName || "Company Name")}</strong>
-        </div>
-
-        <div><strong style="display:block;margin-bottom:8px;">${escapeHtml(subject || "")}</strong></div>
-
-        <div>${editorHtml}</div>
-
-        <div style="margin-top:18px;color:#6c757d">${signature}</div>
-      </div>
-    `;
-
-    previewEl.innerHTML = wrapper;
-
-    document.getElementById("recipientsCount").innerText = contactsList.length;
-    document.getElementById("serviceLabel").innerText = emailService || "-";
-    document.getElementById("fromLabel").innerText =
-      senderName && emailAddress ? `${senderName} <${emailAddress}>` : "-";
-  }
-
-  // Wire inputs to state
-  document.getElementById("senderName").addEventListener("input", (e) => { senderName = e.target.value; updatePreview(); });
-  document.getElementById("emailService").addEventListener("change", (e) => { emailService = e.target.value; updatePreview(); });
-  document.getElementById("emailAddress").addEventListener("input", (e) => { emailAddress = e.target.value; updatePreview(); });
-  document.getElementById("passwordService").addEventListener("input", (e) => { passwordService = e.target.value; });
-  document.getElementById("subject").addEventListener("input", (e) => { subject = e.target.value; updatePreview(); });
-  document.getElementById("title").addEventListener("input", (e) => { title = e.target.value; });
-  document.getElementById("bestRegards").addEventListener("input", (e) => { bestRegards = e.target.value; updatePreview(); });
-
-  // Contenteditable body change -> update state and preview
-  const bodyEl = document.getElementById("body");
-  if (bodyEl) {
-    // Use input event; works for typing/paste
-    bodyEl.addEventListener("input", (e) => {
-      body = getBodyHtml();
-      updatePreview();
-    });
-    // also handle paste: preserve pasted HTML; no extra handling required as contenteditable preserves HTML by default
-  }
-
-  // Quick variable buttons: append placeholder at end
-  document.querySelectorAll(".btn-variable").forEach((b) => {
-    b.addEventListener("click", () => {
-      const v = b.dataset.var || "";
-      const el = document.getElementById("body");
-      if (!el) return;
-      // insert placeholder at end (simple)
-      el.focus();
-      el.innerHTML = el.innerHTML + " " + v;
-      // update state
-      body = getBodyHtml();
-      updatePreview();
-    });
-  });
-
-  // Better email regex (global, case-insensitive)
-  const EMAIL_REGEX = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g;
-
-  // -------------------------------
-  // File import: accept csv, txt, docx
-  // -------------------------------
-  document.getElementById("importContactsBtn").addEventListener("click", async () => {
-    const fileInput = document.getElementById("contactsFile");
-    const file = fileInput.files && fileInput.files[0];
-    if (!file) return alert("Please select a file first.");
-
-    const ext = file.name.split(".").pop().toLowerCase();
-
-    let textOrHtml = "";
-    try {
-      textOrHtml = await fileToText(file, ext);
-    } catch (err) {
-      console.error("File read error:", err);
-      alert("Failed to read file. See console for details.");
-      return;
-    }
-
-    if (!textOrHtml || !textOrHtml.trim()) {
-      alert("No readable text found in file. If it's a legacy .doc (binary) file, please save as .docx or use .txt/.csv.");
-      return;
-    }
-
-    // If .docx conversion produced HTML (contains tags), insert into editor
-    if (ext === "docx" && /<\w+/.test(textOrHtml)) {
-      // insert HTML into contenteditable preserving formatting
-      setBodyHtml(textOrHtml);
-    }
-
-    // Extract emails from whatever was returned
-    const emails = [...(textOrHtml.matchAll(EMAIL_REGEX) || [])].map(m => m[0]).filter(Boolean);
-
-    if (emails.length === 0) {
-      // no emails found — but we may have inserted content into editor already. inform user.
-      if (ext === "docx" && /<\w+/.test(textOrHtml)) {
-        renderContactsPreview([]);
+      // Helpers
+      function getBodyHtml() {
+        const el = document.getElementById("body");
+        return el ? el.innerHTML : "";
+      }
+      function setBodyHtml(html) {
+        const el = document.getElementById("body");
+        if (el) el.innerHTML = html || "";
+        body = getBodyHtml();
         updatePreview();
-        alert("Document content loaded into the editor. No emails detected for contacts.");
-        return;
       }
-      alert("No valid emails found.");
-      return;
-    }
 
-    contactsList = emails.map(email => ({ email }));
-    renderContactsPreview(contactsList);
-    updatePreview();
-  });
-
-  // Convert file to readable text depending on extension
-// Converts uploaded file (CSV, TXT, DOCX) to plain text or HTML-safe text
-async function fileToText(file) {
-  const ext = file.name.split('.').pop().toLowerCase();
-
-  if (ext === "csv" || ext === "txt") {
-    return await file.text();
-  }
-
-  if (ext === "docx") {
-    try {
-      const arrayBuffer = await file.arrayBuffer();
-      const result = await mammoth.convertToHtml({ arrayBuffer });
-      return result.value;
-    } catch (err) {
-      console.error("Error reading DOCX:", err);
-      alert("Unable to read DOCX file. Please ensure it’s a valid Word document.");
-      return "";
-    }
-  }
-
-  alert("Unsupported file type. Please use .csv, .txt, or .docx only.");
-  return "";
-}
-
-  function renderContactsPreview(emails) {
-    const preview = document.getElementById("contactsPreview");
-    if (!preview) return;
-    preview.innerHTML = emails.map(e => `<li>${escapeHtml(e.email)}</li>`).join("");
-  }
-
-  function disableControls(disabled) {
-    const sendBtn = document.getElementById("sendBtn");
-    if (sendBtn) sendBtn.disabled = disabled;
-    const saveBtn = document.getElementById("saveTemplateBtn");
-    if (saveBtn) saveBtn.disabled = disabled;
-    const previewBtn = document.getElementById("previewBtn");
-    if (previewBtn) previewBtn.disabled = disabled;
-  }
-
-  // ----------------------
-
-(async function enableImagePaste() {
-  const editor = document.getElementById('body');
-  if (!editor) return;
-
-  // Try direct fetch first, then fallback to a server proxy for protected/CORS-blocked URLs
-  async function fetchToDataUrl(url) {
-    // small helper to convert blob -> dataURL
-    function blobToDataUrl(blob) {
-      return new Promise((resolve, reject) => {
-        const r = new FileReader();
-        r.onloadend = () => resolve(r.result);
-        r.onerror = reject;
-        r.readAsDataURL(blob);
-      });
-    }
-
-    // Basic guard: ignore inline or blob URLs (they are already embedded)
-    if (!url || url.startsWith('data:') || url.startsWith('blob:') || url.startsWith('cid:')) return null;
-
-    // Detect hosts that commonly block CORS or require auth (adjust regex as needed)
-    const likelyProtected = /googleusercontent\.com|mail\.google\.com|accounts\.google\.com/i.test(url);
-
-    // Try direct fetch for public images (fast path)
-    if (!likelyProtected) {
-      try {
-        const res = await fetch(url, { mode: 'cors' });
-        if (res.ok) {
-          const blob = await res.blob();
-          return await blobToDataUrl(blob);
-        }
-        // fall through to proxy on non-OK
-      } catch (err) {
-        // fall through to proxy
+      function escapeHtml(str) {
+        if (!str) return "";
+        return String(str)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#39;");
       }
-    }
 
-    // Fallback: use your server proxy endpoint which fetches server-side and returns the image
-    try {
-      // NOTE: encodeURIComponent to safely pass the URL as a query param
-      const proxiedUrl = `/proxy-image?url=${encodeURIComponent(url)}`;
-
-      // If your proxy requires auth or special headers, use fetch options accordingly.
-      const pRes = await fetch(proxiedUrl, { mode: 'cors' });
-      if (!pRes.ok) {
-        // give up — caller will mark broken
-        return null;
+      const decodeBufferEl = document.createElement("textarea");
+      function decodeHtmlEntities(str) {
+        if (!str || typeof str !== "string") return str;
+        decodeBufferEl.innerHTML = str;
+        return decodeBufferEl.value;
       }
-      const pBlob = await pRes.blob();
-      return await blobToDataUrl(pBlob);
-    } catch (err) {
-      return null;
-    }
-  }
 
-  // mark images that couldn't be embedded so user can replace
-  function markBroken(img) {
-    img.style.outline = '3px dashed #ff4d4f';
-    img.title = 'Image could not be embedded. Please upload or replace.';
-    img.dataset.missingImage = '1';
-  }
-
-  editor.addEventListener('paste', async (e) => {
-    e.preventDefault();
-    const clipboard = e.clipboardData || window.clipboardData;
-    if (!clipboard) return;
-
-    // 1) If clipboard contains image files, read & insert them (preferred)
-    const items = clipboard.items || [];
-    let insertedFile = false;
-    for (let i = 0; i < items.length; i++) {
-      const it = items[i];
-      if (it && it.type && it.type.indexOf('image') === 0) {
-        const file = it.getAsFile();
-        if (!file) continue;
-        const dataUrl = await new Promise((res, rej) => {
-          const r = new FileReader();
-          r.onloadend = () => res(r.result);
-          r.onerror = rej;
-          r.readAsDataURL(file);
+      function substitutePreviewPlaceholders(html) {
+        if (!html) return "";
+        const map = {
+          firstName: "Friend",
+          lastName: "Customer",
+          company: senderName || "Company Name",
+          companyName: senderName || "Company Name",
+          email: emailAddress || "you@example.com",
+        };
+        let output = html;
+        Object.entries(map).forEach(([token, value]) => {
+          const regex = new RegExp(`{{\\s*${token}\\s*}}`, "gi");
+          output = output.replace(regex, escapeHtml(value));
         });
-        document.execCommand('insertHTML', false, `<img src="${dataUrl}" alt="pasted-image" />`);
-        insertedFile = true;
+        return output;
       }
-    }
-    if (insertedFile) {
-      // update state/preview
-      if (typeof updatePreview === 'function') { body = editor.innerHTML; updatePreview(); }
-      return;
-    }
 
-    // 2) No image files — prefer HTML paste (keeps formatting)
-    const html = clipboard.getData && clipboard.getData('text/html');
-    const text = clipboard.getData && clipboard.getData('text/plain');
-    if (html) {
-      document.execCommand('insertHTML', false, html);
-    } else if (text) {
-      document.execCommand('insertText', false, text);
-    }
+      function buildEmailDocument({ forPreview = false } = {}) {
+        const signatureText = bestRegards ? escapeHtml(bestRegards) : "";
+        const rawHtml = getBodyHtml() || "";
+        const editorEl = document.getElementById("body");
+        const editorText = editorEl ? editorEl.textContent || "" : "";
+        const plainTextFallback =
+          !rawHtml.trim() && body && body.trim()
+            ? escapeHtml(body).replace(/\n/g, "<br>")
+            : "";
 
-    // small delay to let DOM update, then try embedding remote images
-    setTimeout(async () => {
-      const imgs = Array.from(editor.querySelectorAll('img'));
-      for (const img of imgs) {
-        const src = img.getAttribute('src') || '';
-        if (!src) continue;
-        if (src.startsWith('data:') || src.startsWith('blob:') || src.startsWith('cid:')) continue;
-        // Try to fetch and convert to data URL
-        const dataUrl = await fetchToDataUrl(src);
-        if (dataUrl) {
-          img.setAttribute('src', dataUrl);
-        } else {
-          // likely protected (googleusercontent) or CORS blocked — mark so user can replace
-          markBroken(img);
+        let workingHtml = rawHtml.trim() ? rawHtml : plainTextFallback;
+
+        const trimmedText = editorText ? editorText.trim() : "";
+        const looksLikeMarkup =
+          /^<\s*(?:!doctype|html|head|body|table|tr|td|th|style|section|article|header|footer|center|font|div|p|h[1-6]|img|a)\b/i.test(
+            trimmedText
+          );
+        if (looksLikeMarkup) {
+          workingHtml = trimmedText;
         }
-      }
-      // final update
-      if (typeof updatePreview === 'function') { body = editor.innerHTML; updatePreview(); }
-    }, 150);
-  });
-})();
 
-  // Main dashboard sender
-  // ----------------------
-async function sendCampaignMain() {
-  if (!emailAddress) return alert("Please configure sender email.");
-  if (contactsList.length === 0)
-    return alert("No recipients loaded. Import a contacts file first.");
-  if (!subject && !title) {
-    if (!confirm("No subject set. Continue?")) return;
-  }
+        const encodedHtmlPattern =
+          /&lt;\s*\/?\s*(?:!doctype|html|head|body|table|tr|td|th|div|p|style|section|article|header|footer|img|a|h[1-6])/i;
+        const alreadyHasTags =
+          /<\s*(?:!doctype|html|head|body|table|tr|td|th|div|p|section|article|header|footer|img|a|h[1-6])/i.test(
+            workingHtml
+          );
+        if (encodedHtmlPattern.test(workingHtml) && !alreadyHasTags) {
+          workingHtml = decodeHtmlEntities(workingHtml);
+        }
 
-  const contacts = contactsList.map((c) => c?.email?.trim()).filter(Boolean);
+        const hadBestRegardsPlaceholder = /{{\s*bestRegards\s*}}/i.test(
+          workingHtml
+        );
 
-  const rawProvider =
-    (document.getElementById("emailService") || {}).value ||
-    emailService ||
-    "webmail";
-  const provider = rawProvider === "smtp" ? "webmail" : rawProvider;
-  const pass = passwordService ? passwordService : undefined;
+        if (signatureText) {
+          workingHtml = workingHtml.replace(
+            /{{\s*bestRegards\s*}}/gi,
+            signatureText
+          );
+        }
 
-  // Take the HTML directly from the editor
-  const editorHtml = getBodyHtml();
+        if (forPreview) {
+          workingHtml = substitutePreviewPlaceholders(workingHtml);
+        }
 
-  // Build a basic outgoing wrapper
-  const outgoingHtml = `
-    <!doctype html>
-    <html>
-    <head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/></head>
-    <body style="margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;background:#f5f7fb;color:#222;">
-      <div style="padding:18px;background:#ffffff;">
-        <div style="border-bottom:1px solid #eee;padding-bottom:10px;margin-bottom:12px">
-          <strong style="color:#0d6efd">${escapeHtml(senderName || "Company Name")}</strong>
-        </div>
-        ${editorHtml}
-        <div style="margin-top:18px;color:#6c757d">${escapeHtml(bestRegards || "— Team")}</div>
-      </div>
-    </body>
-    </html>
-  `;
+        const docTitle = escapeHtml(subject || title || "Email Preview");
+        const lowerCaseWorking = workingHtml.toLowerCase();
+        const hasDoctype = lowerCaseWorking.includes("<!doctype");
+        const hasHtmlTag = lowerCaseWorking.includes("<html");
+        const hasBodyTag = lowerCaseWorking.includes("<body");
+        const hasTable = lowerCaseWorking.includes("<table");
 
-  const payload = {
-    provider,
-    user: emailAddress,
-    ...(pass ? { pass } : {}),
-    subject,
-    body: outgoingHtml,
-    contacts,
-  };
+        const ensureShell = (inner) =>
+          `
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <title>${docTitle}</title>
+  </head>
+  <body style="margin:0;padding:0;background-color:#f5f7fb;">${inner}</body>
+</html>`.trim();
 
-  // 🔹 ADD THIS SECTION — log payload size
-  const sizeInBytes = new Blob([JSON.stringify(payload)]).size;
-  console.log(
-    "📦 Payload size:",
-    sizeInBytes,
-    "bytes (≈",
-    (sizeInBytes / 1024 / 1024).toFixed(2),
-    "MB )"
-  );
+        if (hasHtmlTag || hasBodyTag || hasDoctype) {
+          let output = workingHtml;
+          if (!hasDoctype) {
+            output = `<!doctype html>\n${output}`;
+          }
+          return output;
+        }
 
-  // Optional warning if it's too large
-  if (sizeInBytes > 5 * 1024 * 1024) {
-    alert(
-      `⚠️ Your campaign payload is ${(sizeInBytes / 1024 / 1024).toFixed(
-        2
-      )} MB. This might be too large and cause a "413 Payload Too Large" error.`
-    );
-  }
+        if (hasTable) {
+          const inner = `<div style="Margin:0 auto;">${workingHtml}</div>`;
+          return ensureShell(inner);
+        }
 
-  // --- Continue with your progress bar logic ---
-  const progressWrap = document.getElementById("campaignProgress");
-  const progressText = document.getElementById("progressText");
-  const progressBar = document.getElementById("progressBar");
-  if (progressWrap) progressWrap.style.display = "block";
-  if (progressBar) {
-    progressBar.style.width = "0%";
-    progressBar.textContent = "0%";
-  }
-  if (progressText) progressText.textContent = "Sending campaign...";
-  disableControls(true);
+        const companyLabel = escapeHtml(senderName || "Company Name");
+        const subjectHeading = subject
+          ? `<h2 style="Margin:0 0 16px 0;font-size:22px;line-height:1.3;color:#111827;">${escapeHtml(
+              subject
+            )}</h2>`
+          : "";
+        const signatureBlock =
+          signatureText && !hadBestRegardsPlaceholder
+            ? `<p style="Margin:24px 0 0;font-size:14px;color:#6b7280;">${signatureText}</p>`
+            : "";
+        const includeDecorHeader = !forPreview;
+        const headerRow = includeDecorHeader
+          ? `<tr>
+              <td style="padding:18px 32px;background-color:#f9fafb;border-bottom:1px solid #e5e7eb;font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:600;color:#0d6efd;">
+                ${companyLabel}
+              </td>
+            </tr>`
+          : "";
+        const subjectBlock = includeDecorHeader ? subjectHeading : "";
 
-  try {
-    const res = await fetch("/api/bulkemail/campaign", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+        const cardHtml = `
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#f5f7fb;">
+    <tr>
+      <td align="center" style="padding:24px 12px;">
+        <table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0" style="width:600px;max-width:100%;background-color:#ffffff;border-radius:8px;overflow:hidden;">
+          ${headerRow}
+          <tr>
+            <td style="padding:24px 32px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:1.6;color:#1f2933;">
+              ${subjectBlock}
+              <div style="font-size:16px;line-height:1.6;color:#1f2933;">${
+                workingHtml || "<p style='Margin:0;'>&nbsp;</p>"
+              }</div>
+              ${signatureBlock}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>`;
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: res.statusText }));
-      throw new Error(err.error || res.statusText || "Send failed");
-    }
-
-    const json = await res.json();
-
-    if (json.total) {
-      const pct = Math.round(((json.sent || 0) / json.total) * 100);
-      if (progressBar) {
-        progressBar.style.width = pct + "%";
-        progressBar.textContent = pct + "%";
-      }
-      if (progressText)
-        progressText.textContent = `Sent ${json.sent || 0} / ${
-          json.total
-        }. Failed: ${json.failed || 0}`;
-    } else {
-      if (progressBar) {
-        progressBar.style.width = "100%";
-        progressBar.textContent = "100%";
-      }
-      if (progressText)
-        progressText.textContent = json.message || "Campaign accepted.";
-    }
-
-    console.log("Campaign response:", json);
-    alert("Campaign processed. See console for server response.");
-  } catch (err) {
-    console.error("Campaign error:", err);
-    console.log("Demo fallback payload:", payload);
-    alert(
-      "Demo: payload prepared. Open console (F12) to inspect object. Integrate /api/bulkemail/campaign on server to actually dispatch emails."
-    );
-    if (progressText) progressText.textContent = "Failed to send campaign.";
-  } finally {
-    disableControls(false);
-  }
-}
-
-  // ----------------------
-  // Widget sender (compact widget at bottom)
-  // ----------------------
-  async function sendCampaignWidget() {
-    const btn = document.getElementById("sendCampaignBtn");
-    if (btn) btn.disabled = true;
-    updateStatus("Preparing...");
-
-    try {
-      const subjectInput = (document.getElementById("subjectInput") || {}).value || "";
-      const editorEl = document.getElementById("editorBody");
-      const widgetBody = editorEl ? editorEl.innerHTML : (document.getElementById("bodyInput") || {}).value || "";
-
-      if (!subjectInput || !widgetBody) {
-        alert("Please provide both a subject and a body.");
-        if (btn) btn.disabled = false;
-        return;
+        return ensureShell(cardHtml);
       }
 
-      updateStatus("Gathering contacts...");
-      const contacts = await gatherContacts();
-      console.log("widget contacts", contacts);
-      if (!contacts.length) {
-        alert("No contacts found. Upload a file or paste emails into the textarea.");
-        if (btn) btn.disabled = false;
-        return;
+      // Render templates
+      const templatesListEl = document.getElementById("templatesList");
+      function renderTemplates() {
+        if (!templatesListEl) return;
+        templatesListEl.innerHTML = "";
+        TEMPLATES.forEach((t) => {
+          const btn = document.createElement("button");
+          btn.className =
+            "list-group-item list-group-item-action template-card";
+          btn.innerHTML = `<div class="d-flex justify-content-between align-items-center"><div>${t.name}</div><small class="text-muted">${t.title}</small></div>`;
+          btn.addEventListener("click", () => selectTemplate(t.id, btn));
+          templatesListEl.appendChild(btn);
+        });
       }
 
-      if (!confirm("Send to " + contacts.length + " contacts? Click OK to proceed.")) {
-        if (btn) btn.disabled = false;
-        return;
+      function selectTemplate(id, btnEl) {
+        const t = TEMPLATES.find((x) => x.id === id);
+        if (!t) return;
+        title = t.title;
+        subject = t.subject;
+        // Insert HTML directly into contenteditable
+        setBodyHtml(t.body || "");
+        const titleEl = document.getElementById("title");
+        const subjectEl = document.getElementById("subject");
+        if (titleEl) titleEl.value = title;
+        if (subjectEl) subjectEl.value = subject;
+        document
+          .querySelectorAll(".template-card")
+          .forEach((el) => el.classList.remove("active"));
+        if (btnEl) btnEl.classList.add("active");
       }
 
-      updateStatus("Sending...");
+      function updatePreview() {
+        const frame = document.getElementById("livePreviewFrame");
+        if (!frame) return;
+        const compiledHtml = buildEmailDocument({ forPreview: true });
+        const html =
+          compiledHtml || "<!doctype html><html><body></body></html>";
 
-      const rawProvider = (document.getElementById("emailService") || {}).value || emailService || "webmail";
-      const provider = rawProvider === "smtp" ? "webmail" : rawProvider;
-      const user = (document.getElementById("emailAddress") || {}).value || undefined;
-      const pass = (document.getElementById("passwordService") || {}).value || undefined;
+        const resizeFrame = () => {
+          try {
+            const doc = frame.contentDocument || frame.contentWindow?.document;
+            if (!doc) return;
+            const height =
+              Math.max(
+                doc.body ? doc.body.scrollHeight : 0,
+                doc.documentElement ? doc.documentElement.scrollHeight : 0,
+                240
+              ) + 16;
+            frame.style.height = Math.min(height, 1200) + "px";
+          } catch (err) {
+            console.warn("preview resize error", err);
+          }
+        };
 
-      console.log("sendCampaignWidget -> provider:", provider, "user present:", !!user, "contacts:", contacts.length);
+        frame.onload = resizeFrame;
+        frame.srcdoc = html;
+        // attempt resize in case onload misses (cached content)
+        setTimeout(resizeFrame, 150);
 
-      const payload = {
-        provider,
-        ...(user ? { user } : {}),
-        ...(pass ? { pass } : {}),
-        subject: subjectInput,
-        body: widgetBody,
-        contacts,
-      };
+        document.getElementById("recipientsCount").innerText =
+          contactsList.length;
+        document.getElementById("serviceLabel").innerText = emailService || "-";
+        document.getElementById("fromLabel").innerText =
+          senderName && emailAddress ? `${senderName} <${emailAddress}>` : "-";
+        const senderPreview = document.getElementById("previewSenderLabel");
+        if (senderPreview) senderPreview.textContent = senderName || "Company Name";
+        const senderEmailPreview = document.getElementById("previewSenderEmailLabel");
+        if (senderEmailPreview) senderEmailPreview.textContent = emailAddress || "";
+        const subjectPreview = document.getElementById("previewSubjectLabel");
+        if (subjectPreview) subjectPreview.textContent = subject || "(No subject yet)";
+      }
 
-      const res = await fetch("/api/bulkemail/campaign", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+      // Wire inputs to state
+      document.getElementById("senderName").addEventListener("input", (e) => {
+        senderName = e.target.value;
+        updatePreview();
+      });
+      document
+        .getElementById("emailService")
+        .addEventListener("change", (e) => {
+          emailService = e.target.value;
+          updatePreview();
+        });
+      document.getElementById("emailAddress").addEventListener("input", (e) => {
+        emailAddress = e.target.value;
+        updatePreview();
+      });
+      document
+        .getElementById("passwordService")
+        .addEventListener("input", (e) => {
+          passwordService = e.target.value;
+        });
+      document.getElementById("subject").addEventListener("input", (e) => {
+        subject = e.target.value;
+        updatePreview();
+      });
+      document.getElementById("title").addEventListener("input", (e) => {
+        title = e.target.value;
+      });
+      document.getElementById("bestRegards").addEventListener("input", (e) => {
+        bestRegards = e.target.value;
+        updatePreview();
       });
 
-      if (!res.ok) {
-        const txt = await res.text();
-        console.error("Server error response:", txt);
-        alert("Server error: " + res.status + " — see console for details.");
-        updateStatus("Error");
-        if (btn) btn.disabled = false;
-        return;
+      // Contenteditable body change -> update state and preview
+      const bodyEl = document.getElementById("body");
+      if (bodyEl) {
+        // Use input event; works for typing/paste
+        bodyEl.addEventListener("input", (e) => {
+          body = getBodyHtml();
+          updatePreview();
+        });
+        // also handle paste: preserve pasted HTML; no extra handling required as contenteditable preserves HTML by default
       }
 
-      const data = await res.json();
-      console.log("Campaign send results:", data);
+      // Quick variable buttons: append placeholder at end
+      document.querySelectorAll(".btn-variable").forEach((b) => {
+        b.addEventListener("click", () => {
+          const v = b.dataset.var || "";
+          const el = document.getElementById("body");
+          if (!el) return;
+          // insert placeholder at end (simple)
+          el.focus();
+          el.innerHTML = el.innerHTML + " " + v;
+          // update state
+          body = getBodyHtml();
+          updatePreview();
+        });
+      });
 
-      const ok = data.results ? data.results.filter((r) => r.ok).length : 0;
-      const failed = data.results ? data.results.length - ok : 0;
-      updateStatus("Done: " + ok + " success, " + failed + " failed.");
-      alert("Campaign complete. Success: " + ok + ", Failed: " + failed + ". Check console for details.");
-    } catch (err) {
-      console.error("sendCampaignWidget error", err);
-      alert("Error sending campaign: " + (err && err.message ? err.message : err));
-      updateStatus("Error");
-    } finally {
-      const btn = document.getElementById("sendCampaignBtn");
-      if (btn) btn.disabled = false;
-    }
-  }
+      // Better email regex (global, case-insensitive)
+      const EMAIL_REGEX = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g;
 
-  // ----- small CSV helpers used by widget -----
-  function parseCSVTextToEmails(text) {
-    const emails = [];
-    const lines = text.split(/\r?\n/);
-    for (const line of lines) {
-      if (!line) continue;
-      const parts = line.split(/[,;\t]+/);
-      for (const p of parts) {
-        const candidate = p.trim().replace(/^"|"$/g, "");
-        if (candidate && candidate.includes("@") && candidate.indexOf(" ") === -1) {
-          emails.push(candidate);
-          break;
+      // -------------------------------
+      // File import: accept csv, txt, docx
+      // -------------------------------
+      document
+        .getElementById("importContactsBtn")
+        .addEventListener("click", async () => {
+          const fileInput = document.getElementById("contactsFile");
+          const file = fileInput.files && fileInput.files[0];
+          if (!file) return alert("Please select a file first.");
+
+          const ext = file.name.split(".").pop().toLowerCase();
+
+          let textOrHtml = "";
+          try {
+            textOrHtml = await fileToText(file, ext);
+          } catch (err) {
+            console.error("File read error:", err);
+            alert("Failed to read file. See console for details.");
+            return;
+          }
+
+          if (!textOrHtml || !textOrHtml.trim()) {
+            alert(
+              "No readable text found in file. If it's a legacy .doc (binary) file, please save as .docx or use .txt/.csv."
+            );
+            return;
+          }
+
+          // If .docx conversion produced HTML (contains tags), insert into editor
+          if (ext === "docx" && /<\w+/.test(textOrHtml)) {
+            // insert HTML into contenteditable preserving formatting
+            setBodyHtml(textOrHtml);
+          }
+
+          // Extract emails from whatever was returned
+          const emails = [...(textOrHtml.matchAll(EMAIL_REGEX) || [])]
+            .map((m) => m[0])
+            .filter(Boolean);
+
+          if (emails.length === 0) {
+            // no emails found — but we may have inserted content into editor already. inform user.
+            if (ext === "docx" && /<\w+/.test(textOrHtml)) {
+              renderContactsPreview([]);
+              updatePreview();
+              alert(
+                "Document content loaded into the editor. No emails detected for contacts."
+              );
+              return;
+            }
+            alert("No valid emails found.");
+            return;
+          }
+
+          contactsList = emails.map((email) => ({ email }));
+          renderContactsPreview(contactsList);
+          updatePreview();
+        });
+
+      // Convert file to readable text depending on extension
+      // Converts uploaded file (CSV, TXT, DOCX) to plain text or HTML-safe text
+      async function fileToText(file) {
+        const ext = file.name.split(".").pop().toLowerCase();
+
+        if (ext === "csv" || ext === "txt") {
+          return await file.text();
+        }
+
+        if (ext === "docx") {
+          try {
+            const arrayBuffer = await file.arrayBuffer();
+            const result = await mammoth.convertToHtml({ arrayBuffer });
+            return result.value;
+          } catch (err) {
+            console.error("Error reading DOCX:", err);
+            alert(
+              "Unable to read DOCX file. Please ensure it’s a valid Word document."
+            );
+            return "";
+          }
+        }
+
+        alert("Unsupported file type. Please use .csv, .txt, or .docx only.");
+        return "";
+      }
+
+      function renderContactsPreview(emails) {
+        const preview = document.getElementById("contactsPreview");
+        if (!preview) return;
+        preview.innerHTML = emails
+          .map((e) => `<li>${escapeHtml(e.email)}</li>`)
+          .join("");
+      }
+
+      function disableControls(disabled) {
+        const sendBtn = document.getElementById("sendBtn");
+        if (sendBtn) sendBtn.disabled = disabled;
+        const saveBtn = document.getElementById("saveTemplateBtn");
+        if (saveBtn) saveBtn.disabled = disabled;
+        const previewBtn = document.getElementById("previewBtn");
+        if (previewBtn) previewBtn.disabled = disabled;
+      }
+
+      // ----------------------
+
+      (async function enableImagePaste() {
+        const editor = document.getElementById("body");
+        if (!editor) return;
+
+        // Try direct fetch first, then fallback to a server proxy for protected/CORS-blocked URLs
+        async function fetchToDataUrl(url) {
+          // small helper to convert blob -> dataURL
+          function blobToDataUrl(blob) {
+            return new Promise((resolve, reject) => {
+              const r = new FileReader();
+              r.onloadend = () => resolve(r.result);
+              r.onerror = reject;
+              r.readAsDataURL(blob);
+            });
+          }
+
+          // Basic guard: ignore inline or blob URLs (they are already embedded)
+          if (
+            !url ||
+            url.startsWith("data:") ||
+            url.startsWith("blob:") ||
+            url.startsWith("cid:")
+          )
+            return null;
+
+          // Detect hosts that commonly block CORS or require auth (adjust regex as needed)
+          const likelyProtected =
+            /googleusercontent\.com|mail\.google\.com|accounts\.google\.com/i.test(
+              url
+            );
+
+          // Try direct fetch for public images (fast path)
+          if (!likelyProtected) {
+            try {
+              const res = await fetch(url, { mode: "cors" });
+              if (res.ok) {
+                const blob = await res.blob();
+                return await blobToDataUrl(blob);
+              }
+              // fall through to proxy on non-OK
+            } catch (err) {
+              // fall through to proxy
+            }
+          }
+
+          // Fallback: use your server proxy endpoint which fetches server-side and returns the image
+          try {
+            // NOTE: encodeURIComponent to safely pass the URL as a query param
+            const proxiedUrl = `/proxy-image?url=${encodeURIComponent(url)}`;
+
+            // If your proxy requires auth or special headers, use fetch options accordingly.
+            const pRes = await fetch(proxiedUrl, { mode: "cors" });
+            if (!pRes.ok) {
+              // give up — caller will mark broken
+              return null;
+            }
+            const pBlob = await pRes.blob();
+            return await blobToDataUrl(pBlob);
+          } catch (err) {
+            return null;
+          }
+        }
+
+        // mark images that couldn't be embedded so user can replace
+        function markBroken(img) {
+          img.style.outline = "3px dashed #ff4d4f";
+          img.title = "Image could not be embedded. Please upload or replace.";
+          img.dataset.missingImage = "1";
+        }
+
+        editor.addEventListener("paste", async (e) => {
+          e.preventDefault();
+          const clipboard = e.clipboardData || window.clipboardData;
+          if (!clipboard) return;
+
+          // 1) If clipboard contains image files, read & insert them (preferred)
+          const items = clipboard.items || [];
+          let insertedFile = false;
+          for (let i = 0; i < items.length; i++) {
+            const it = items[i];
+            if (it && it.type && it.type.indexOf("image") === 0) {
+              const file = it.getAsFile();
+              if (!file) continue;
+              const dataUrl = await new Promise((res, rej) => {
+                const r = new FileReader();
+                r.onloadend = () => res(r.result);
+                r.onerror = rej;
+                r.readAsDataURL(file);
+              });
+              document.execCommand(
+                "insertHTML",
+                false,
+                `<img src="${dataUrl}" alt="pasted-image" />`
+              );
+              insertedFile = true;
+            }
+          }
+          if (insertedFile) {
+            // update state/preview
+            if (typeof updatePreview === "function") {
+              body = editor.innerHTML;
+              updatePreview();
+            }
+            return;
+          }
+
+          // 2) No image files — prefer HTML paste (keeps formatting)
+          const html = clipboard.getData && clipboard.getData("text/html");
+          const text = clipboard.getData && clipboard.getData("text/plain");
+          if (html) {
+            document.execCommand("insertHTML", false, html);
+          } else if (text) {
+            document.execCommand("insertText", false, text);
+          }
+
+          // small delay to let DOM update, then try embedding remote images
+          setTimeout(async () => {
+            const imgs = Array.from(editor.querySelectorAll("img"));
+            for (const img of imgs) {
+              const src = img.getAttribute("src") || "";
+              if (!src) continue;
+              if (
+                src.startsWith("data:") ||
+                src.startsWith("blob:") ||
+                src.startsWith("cid:")
+              )
+                continue;
+              // Try to fetch and convert to data URL
+              const dataUrl = await fetchToDataUrl(src);
+              if (dataUrl) {
+                img.setAttribute("src", dataUrl);
+              } else {
+                // likely protected (googleusercontent) or CORS blocked — mark so user can replace
+                markBroken(img);
+              }
+            }
+            // final update
+            if (typeof updatePreview === "function") {
+              body = editor.innerHTML;
+              updatePreview();
+            }
+          }, 150);
+        });
+      })();
+
+      // Main dashboard sender
+      // ----------------------
+      async function sendCampaignMain() {
+        if (!emailAddress) return alert("Please configure sender email.");
+        if (contactsList.length === 0)
+          return alert("No recipients loaded. Import a contacts file first.");
+        if (!subject && !title) {
+          if (!confirm("No subject set. Continue?")) return;
+        }
+
+        const contacts = contactsList
+          .map((c) => c?.email?.trim())
+          .filter(Boolean);
+
+        const rawProvider =
+          (document.getElementById("emailService") || {}).value ||
+          emailService ||
+          "webmail";
+        const provider = rawProvider === "smtp" ? "webmail" : rawProvider;
+        const pass = passwordService ? passwordService : undefined;
+
+        const outgoingHtml = buildEmailDocument();
+
+        const payload = {
+          provider,
+          user: emailAddress,
+          ...(pass ? { pass } : {}),
+          subject,
+          body: outgoingHtml,
+          contacts,
+        };
+
+        // 🔹 ADD THIS SECTION — log payload size
+        const sizeInBytes = new Blob([JSON.stringify(payload)]).size;
+        console.log(
+          "📦 Payload size:",
+          sizeInBytes,
+          "bytes (≈",
+          (sizeInBytes / 1024 / 1024).toFixed(2),
+          "MB )"
+        );
+
+        // Optional warning if it's too large
+        if (sizeInBytes > 5 * 1024 * 1024) {
+          alert(
+            `⚠️ Your campaign payload is ${(sizeInBytes / 1024 / 1024).toFixed(
+              2
+            )} MB. This might be too large and cause a "413 Payload Too Large" error.`
+          );
+        }
+
+        // --- Continue with your progress bar logic ---
+        const progressWrap = document.getElementById("campaignProgress");
+        const progressText = document.getElementById("progressText");
+        const progressBar = document.getElementById("progressBar");
+        if (progressWrap) progressWrap.style.display = "block";
+        if (progressBar) {
+          progressBar.style.width = "0%";
+          progressBar.textContent = "0%";
+        }
+        if (progressText) progressText.textContent = "Sending campaign...";
+        disableControls(true);
+
+        try {
+          const res = await fetch("/api/bulkemail/campaign", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+
+          if (!res.ok) {
+            const err = await res
+              .json()
+              .catch(() => ({ error: res.statusText }));
+            throw new Error(err.error || res.statusText || "Send failed");
+          }
+
+          const json = await res.json();
+
+          if (json.total) {
+            const pct = Math.round(((json.sent || 0) / json.total) * 100);
+            if (progressBar) {
+              progressBar.style.width = pct + "%";
+              progressBar.textContent = pct + "%";
+            }
+            if (progressText)
+              progressText.textContent = `Sent ${json.sent || 0} / ${
+                json.total
+              }. Failed: ${json.failed || 0}`;
+          } else {
+            if (progressBar) {
+              progressBar.style.width = "100%";
+              progressBar.textContent = "100%";
+            }
+            if (progressText)
+              progressText.textContent = json.message || "Campaign accepted.";
+          }
+
+          console.log("Campaign response:", json);
+          alert("Campaign processed. See console for server response.");
+        } catch (err) {
+          console.error("Campaign error:", err);
+          console.log("Demo fallback payload:", payload);
+          alert(
+            "Demo: payload prepared. Open console (F12) to inspect object. Integrate /api/bulkemail/campaign on server to actually dispatch emails."
+          );
+          if (progressText)
+            progressText.textContent = "Failed to send campaign.";
+        } finally {
+          disableControls(false);
         }
       }
-    }
-    return emails;
-  }
 
-  async function fileToEmails(file) {
-    if (!file) return [];
-    const ext = file.name.split(".").pop().toLowerCase();
-    try {
-      const text = await fileToText(file, ext);
-      // unify parsing for CSV/TXT/DOCX
-      if (!text) return [];
-      const found = [...(text.matchAll(EMAIL_REGEX) || [])].map(m => m[0]);
-      if (found.length) return found;
-      // Fallback: try csv parsing
-      return parseCSVTextToEmails(text);
-    } catch (err) {
-      console.error("fileToEmails error", err);
-      return [];
-    }
-  }
+      // ----------------------
+      // Widget sender (compact widget at bottom)
+      // ----------------------
+      async function sendCampaignWidget() {
+        const btn = document.getElementById("sendCampaignBtn");
+        if (btn) btn.disabled = true;
+        updateStatus("Preparing...");
 
-  async function gatherContacts() {
-    const fileInput = document.getElementById("csvFileInput") || document.getElementById("contactsFile");
-    const textarea = document.getElementById("contactsTextarea");
+        try {
+          const subjectInput =
+            (document.getElementById("subjectInput") || {}).value || "";
+          const editorEl = document.getElementById("editorBody");
+          const widgetBody = editorEl
+            ? editorEl.innerHTML
+            : (document.getElementById("bodyInput") || {}).value || "";
 
-    if (fileInput && fileInput.files && fileInput.files.length) {
-      try {
-        const arr = await fileToEmails(fileInput.files[0]);
-        return arr;
-      } catch (err) {
-        console.error("file parse error", err);
+          if (!subjectInput || !widgetBody) {
+            alert("Please provide both a subject and a body.");
+            if (btn) btn.disabled = false;
+            return;
+          }
+
+          updateStatus("Gathering contacts...");
+          const contacts = await gatherContacts();
+          console.log("widget contacts", contacts);
+          if (!contacts.length) {
+            alert(
+              "No contacts found. Upload a file or paste emails into the textarea."
+            );
+            if (btn) btn.disabled = false;
+            return;
+          }
+
+          if (
+            !confirm(
+              "Send to " + contacts.length + " contacts? Click OK to proceed."
+            )
+          ) {
+            if (btn) btn.disabled = false;
+            return;
+          }
+
+          updateStatus("Sending...");
+
+          const rawProvider =
+            (document.getElementById("emailService") || {}).value ||
+            emailService ||
+            "webmail";
+          const provider = rawProvider === "smtp" ? "webmail" : rawProvider;
+          const user =
+            (document.getElementById("emailAddress") || {}).value || undefined;
+          const pass =
+            (document.getElementById("passwordService") || {}).value ||
+            undefined;
+
+          console.log(
+            "sendCampaignWidget -> provider:",
+            provider,
+            "user present:",
+            !!user,
+            "contacts:",
+            contacts.length
+          );
+
+          const payload = {
+            provider,
+            ...(user ? { user } : {}),
+            ...(pass ? { pass } : {}),
+            subject: subjectInput,
+            body: widgetBody,
+            contacts,
+          };
+
+          const res = await fetch("/api/bulkemail/campaign", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+
+          if (!res.ok) {
+            const txt = await res.text();
+            console.error("Server error response:", txt);
+            alert(
+              "Server error: " + res.status + " — see console for details."
+            );
+            updateStatus("Error");
+            if (btn) btn.disabled = false;
+            return;
+          }
+
+          const data = await res.json();
+          console.log("Campaign send results:", data);
+
+          const ok = data.results ? data.results.filter((r) => r.ok).length : 0;
+          const failed = data.results ? data.results.length - ok : 0;
+          updateStatus("Done: " + ok + " success, " + failed + " failed.");
+          alert(
+            "Campaign complete. Success: " +
+              ok +
+              ", Failed: " +
+              failed +
+              ". Check console for details."
+          );
+        } catch (err) {
+          console.error("sendCampaignWidget error", err);
+          alert(
+            "Error sending campaign: " +
+              (err && err.message ? err.message : err)
+          );
+          updateStatus("Error");
+        } finally {
+          const btn = document.getElementById("sendCampaignBtn");
+          if (btn) btn.disabled = false;
+        }
+      }
+
+      // ----- small CSV helpers used by widget -----
+      function parseCSVTextToEmails(text) {
+        const emails = [];
+        const lines = text.split(/\r?\n/);
+        for (const line of lines) {
+          if (!line) continue;
+          const parts = line.split(/[,;\t]+/);
+          for (const p of parts) {
+            const candidate = p.trim().replace(/^"|"$/g, "");
+            if (
+              candidate &&
+              candidate.includes("@") &&
+              candidate.indexOf(" ") === -1
+            ) {
+              emails.push(candidate);
+              break;
+            }
+          }
+        }
+        return emails;
+      }
+
+      async function fileToEmails(file) {
+        if (!file) return [];
+        const ext = file.name.split(".").pop().toLowerCase();
+        try {
+          const text = await fileToText(file, ext);
+          // unify parsing for CSV/TXT/DOCX
+          if (!text) return [];
+          const found = [...(text.matchAll(EMAIL_REGEX) || [])].map(
+            (m) => m[0]
+          );
+          if (found.length) return found;
+          // Fallback: try csv parsing
+          return parseCSVTextToEmails(text);
+        } catch (err) {
+          console.error("fileToEmails error", err);
+          return [];
+        }
+      }
+
+      async function gatherContacts() {
+        const fileInput =
+          document.getElementById("csvFileInput") ||
+          document.getElementById("contactsFile");
+        const textarea = document.getElementById("contactsTextarea");
+
+        if (fileInput && fileInput.files && fileInput.files.length) {
+          try {
+            const arr = await fileToEmails(fileInput.files[0]);
+            return arr;
+          } catch (err) {
+            console.error("file parse error", err);
+            return [];
+          }
+        }
+
+        if (textarea && textarea.value.trim()) {
+          const raw = textarea.value.trim();
+          const arr = raw
+            .split(/[,\r\n]+/)
+            .map((s) => s.trim())
+            .filter(Boolean);
+          return arr.filter((s) => s.includes("@"));
+        }
+
         return [];
       }
-    }
 
-    if (textarea && textarea.value.trim()) {
-      const raw = textarea.value.trim();
-      const arr = raw.split(/[,\r\n]+/).map((s) => s.trim()).filter(Boolean);
-      return arr.filter((s) => s.includes("@"));
-    }
+      function updateStatus(msg) {
+        const el = document.getElementById("sendStatus");
+        if (el) el.textContent = msg || "";
+      }
 
-    return [];
-  }
+      // Preview contacts (widget)
+      document
+        .getElementById("previewContactsBtn")
+        ?.addEventListener("click", async (e) => {
+          e.preventDefault();
+          const contacts = await gatherContacts();
+          if (!contacts.length) {
+            alert(
+              "No contacts found. Upload a file or paste emails in the textarea."
+            );
+            return;
+          }
+          const preview = contacts.slice(0, 200).join("\n");
+          const previewWindow = window.open(
+            "",
+            "",
+            "width=600,height=400,scrollbars=yes"
+          );
+          previewWindow.document.write(
+            "<pre>" + escapeHtml(preview).replace(/</g, "&lt;") + "</pre>"
+          );
+        });
 
-  function updateStatus(msg) {
-    const el = document.getElementById("sendStatus");
-    if (el) el.textContent = msg || "";
-  }
+      // Attach main SendNow and widget bindings once DOM is ready
+      document.addEventListener("DOMContentLoaded", () => {
+        // Bind main Send Now
+        const sendNowEl = document.getElementById("sendBtn");
+        if (sendNowEl) {
+          sendNowEl.addEventListener("click", (e) => {
+            e.preventDefault();
+            const rawProvider = (document.getElementById("emailService") || {})
+              .value;
+            console.log("Send Now clicked — selected provider:", rawProvider);
+            emailService = rawProvider || emailService;
+            // ensure local state picks latest inputs (in case they typed then clicked)
+            senderName =
+              (document.getElementById("senderName") || {}).value || senderName;
+            emailAddress =
+              (document.getElementById("emailAddress") || {}).value ||
+              emailAddress;
+            passwordService =
+              (document.getElementById("passwordService") || {}).value ||
+              passwordService;
+            subject =
+              (document.getElementById("subject") || {}).value || subject;
+            bestRegards =
+              (document.getElementById("bestRegards") || {}).value ||
+              bestRegards;
+            sendCampaignMain();
+          });
+        }
 
-  // Preview contacts (widget)
-  document.getElementById("previewContactsBtn")?.addEventListener("click", async (e) => {
-    e.preventDefault();
-    const contacts = await gatherContacts();
-    if (!contacts.length) {
-      alert("No contacts found. Upload a file or paste emails in the textarea.");
-      return;
-    }
-    const preview = contacts.slice(0, 200).join("\n");
-    const previewWindow = window.open("", "", "width=600,height=400,scrollbars=yes");
-    previewWindow.document.write("<pre>" + escapeHtml(preview).replace(/</g, "&lt;") + "</pre>");
-  });
+        // Bind widget send (if any)
+        const widgetBtn = document.getElementById("sendCampaignBtn");
+        if (widgetBtn) {
+          widgetBtn.addEventListener("click", (e) => {
+            e.preventDefault();
+            sendCampaignWidget();
+          });
+        }
 
-  // Attach main SendNow and widget bindings once DOM is ready
-  document.addEventListener("DOMContentLoaded", () => {
-    // Bind main Send Now
-    const sendNowEl = document.getElementById("sendBtn");
-    if (sendNowEl) {
-      sendNowEl.addEventListener("click", (e) => {
-        e.preventDefault();
-        const rawProvider = (document.getElementById("emailService") || {}).value;
-        console.log("Send Now clicked — selected provider:", rawProvider);
-        emailService = rawProvider || emailService;
-        // ensure local state picks latest inputs (in case they typed then clicked)
-        senderName = (document.getElementById("senderName") || {}).value || senderName;
-        emailAddress = (document.getElementById("emailAddress") || {}).value || emailAddress;
-        passwordService = (document.getElementById("passwordService") || {}).value || passwordService;
-        subject = (document.getElementById("subject") || {}).value || subject;
-        bestRegards = (document.getElementById("bestRegards") || {}).value || bestRegards;
-        sendCampaignMain();
-      });
-    }
+        // Save template button - save innerHTML as template body
+        const saveBtn = document.getElementById("saveTemplateBtn");
+        if (saveBtn) {
+          saveBtn.addEventListener("click", () => {
+            const id = "tpl_" + Date.now();
+            const tplBody = getBodyHtml();
+            TEMPLATES.push({
+              id,
+              name: title || "Untitled",
+              title,
+              subject,
+              body: tplBody,
+            });
+            renderTemplates();
+            alert(
+              "Template saved (in-memory). Persist templates on the server to keep them."
+            );
+          });
+        }
 
-    // Bind widget send (if any)
-    const widgetBtn = document.getElementById("sendCampaignBtn");
-    if (widgetBtn) {
-      widgetBtn.addEventListener("click", (e) => {
-        e.preventDefault();
-        sendCampaignWidget();
-      });
-    }
+        // Preview button - open a full preview window showing subject + editor HTML
+        const previewBtn = document.getElementById("previewBtn");
+        if (previewBtn) {
+          previewBtn.addEventListener("click", () => {
+            const win = window.open("", "_blank", "width=900,height=700");
+            const compiledDoc = buildEmailDocument();
+            win.document.write(compiledDoc);
+            win.document.close();
+          });
+        }
 
-    // Save template button - save innerHTML as template body
-    const saveBtn = document.getElementById("saveTemplateBtn");
-    if (saveBtn) {
-      saveBtn.addEventListener("click", () => {
-        const id = "tpl_" + Date.now();
-        const tplBody = getBodyHtml();
-        TEMPLATES.push({ id, name: title || "Untitled", title, subject, body: tplBody });
         renderTemplates();
-        alert("Template saved (in-memory). Persist templates on the server to keep them.");
+        updatePreview();
       });
-    }
-
-    // Preview button - open a full preview window showing subject + editor HTML
-    const previewBtn = document.getElementById("previewBtn");
-    if (previewBtn) {
-      previewBtn.addEventListener("click", () => {
-        const win = window.open("", "_blank", "width=900,height=700");
-        const editorHtml = getBodyHtml() || "";
-        win.document.write(`
-          <html>
-            <head><title>Preview</title></head>
-            <body style="font-family:Arial,Helvetica,sans-serif;padding:20px;background:#f5f7fb">
-              <div style="max-width:760px;margin:0 auto;background:#fff;padding:18px;">
-                <h4>${escapeHtml(subject || "No subject")}</h4>
-                <div>${editorHtml}</div>
-                <hr/>
-                <div>${escapeHtml(bestRegards || "")}</div>
-              </div>
-            </body>
-          </html>
-        `);
-        win.document.close();
-      });
-    }
-
-    renderTemplates();
-    updatePreview();
-  });
     </script>
     <!-- ================== END SCRIPT ================== -->
   </body>
