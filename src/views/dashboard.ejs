@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Bulk Email Dashboard</title>
+    <title>Bulk Email Dashboard — Demo</title>
     <!-- Bootstrap CSS CDN -->
     <link
       href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
@@ -32,6 +32,17 @@
         font-size: 0.85rem;
         color: #6c757d;
       }
+      /* make contenteditable look like a form control on small screens */
+      #body[contenteditable="true"] {
+        min-height: 250px;
+        background:#fff;
+        overflow:auto;
+        padding:10px;
+        border:1px solid #ccc;
+        border-radius:4px;
+      }
+      /* Live preview scroll */
+      #livePreview { max-height: 520px; overflow:auto; }
     </style>
   </head>
   <body>
@@ -54,11 +65,6 @@
             <li class="nav-item">
               <a class="nav-link" href="#bulk">Bulk Sender</a>
             </li>
-            <% if (user && user.role === "admin") { %>
-            <li class="nav-item">
-              <a class="nav-link" href="/adminDashboard">Admin</a>
-            </li>
-            <% } %>
           </ul>
         </div>
       </div>
@@ -76,11 +82,11 @@
             <input
               id="contactsFile"
               type="file"
-              accept=".csv,.txt,.doc,.docx"
+              accept=".csv,.txt,.docx"
               class="form-control form-control-sm"
             />
             <div class="form-text small-muted">
-              Upload a CSV, TXT AND DOC files 
+              Upload a CSV, TXT or DOCX file — emails will be extracted automatically.
             </div>
           </div>
           <div class="mb-2">
@@ -120,7 +126,6 @@
               </button>
               <button id="sendBtn" class="btn btn-primary">Send Now</button>
 
-              <!-- Include password checkbox (UI only; we send pass whenever present) -->
               <div class="form-check d-inline-block ms-3">
                 <input
                   class="form-check-input"
@@ -131,12 +136,10 @@
                   class="form-check-label small-muted"
                   for="includePassword"
                 >
-                  Include password/service key with this campaign (not
-                  recommended)
+                  Include password/service key with this campaign
                 </label>
               </div>
 
-              <!-- campaign progress UI (inserted next to buttons) -->
               <div
                 id="campaignProgress"
                 class="mt-2"
@@ -245,6 +248,8 @@
                       contenteditable="true"
                       style="min-height:250px; background:#fff; overflow:auto; padding:10px; border:1px solid #ccc;"
                       placeholder="Paste or type your email content here (supports full HTML formatting)">
+                      <p>Hello <strong>{{ firstName }}</strong>,</p>
+                      <p>Welcome — paste or type your HTML here. Images pasted will attempt to embed as data URLs.</p>
                     </div>
                     <small class="form-text text-muted">Paste directly from Word, Gmail, or any email builder — all formatting and colors are preserved.</small>
 
@@ -315,7 +320,6 @@
                     </li>
                   </ul>
                   <br />
-                  <!-- the log out button -->
                   <form action="/logout" method="get">
                     <button type="submit" id="logoutBtn" class="btn btn-primary">
                       Log Out
@@ -329,12 +333,12 @@
       </div>
     </div>
 
-    <!-- Bootstrap JS + small app JS -->
+    <!-- Bootstrap JS + mammoth for .docx parsing -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-  <!-- Add mammoth for .docx parsing -->
-<script src="https://unpkg.com/mammoth/mammoth.browser.min.js"></script>
+    <script src="https://unpkg.com/mammoth/mammoth.browser.min.js"></script>
 
-<script>
+    <!-- ================== FULL CLIENT SCRIPT ================== -->
+    <script>
   // ------------------------
   // Client-side logic (preserve HTML in contenteditable)
   // ------------------------
@@ -376,6 +380,7 @@
   // Render templates
   const templatesListEl = document.getElementById("templatesList");
   function renderTemplates() {
+    if (!templatesListEl) return;
     templatesListEl.innerHTML = "";
     TEMPLATES.forEach((t) => {
       const btn = document.createElement("button");
@@ -393,15 +398,18 @@
     subject = t.subject;
     // Insert HTML directly into contenteditable
     setBodyHtml(t.body || "");
-    document.getElementById("title").value = title;
-    document.getElementById("subject").value = subject;
+    const titleEl = document.getElementById("title");
+    const subjectEl = document.getElementById("subject");
+    if (titleEl) titleEl.value = title;
+    if (subjectEl) subjectEl.value = subject;
     document.querySelectorAll(".template-card").forEach((el) => el.classList.remove("active"));
     if (btnEl) btnEl.classList.add("active");
   }
 
   function updatePreview() {
     const previewEl = document.getElementById("livePreview");
-    const signature = escapeHtml(bestRegards) || "— Team";
+    if (!previewEl) return;
+    const signature = bestRegards || "— Team";
 
     // Get raw editor HTML (preserve as-is)
     let editorHtml = getBodyHtml() || "";
@@ -415,6 +423,7 @@
     // Replace some placeholders for preview only (so user sees personalized example)
     editorHtml = editorHtml.replaceAll("{{ firstName }}", "Friend").replaceAll("{{firstName}}", "Friend");
     editorHtml = editorHtml.replaceAll("{{ lastName }}", "Customer").replaceAll("{{lastName}}", "Customer");
+    editorHtml = editorHtml.replaceAll("{{bestRegards}}", escapeHtml(signature));
 
     // Build preview wrapper (simple)
     const wrapper = `
@@ -554,6 +563,7 @@ async function fileToText(file) {
 
   function renderContactsPreview(emails) {
     const preview = document.getElementById("contactsPreview");
+    if (!preview) return;
     preview.innerHTML = emails.map(e => `<li>${escapeHtml(e.email)}</li>`).join("");
   }
 
@@ -572,18 +582,51 @@ async function fileToText(file) {
   const editor = document.getElementById('body');
   if (!editor) return;
 
-  // fetch remote image and convert to data URL (returns null if fetch blocked)
+  // Try direct fetch first, then fallback to a server proxy for protected/CORS-blocked URLs
   async function fetchToDataUrl(url) {
-    try {
-      const res = await fetch(url, { mode: 'cors' });
-      if (!res.ok) throw new Error('fetch failed ' + res.status);
-      const blob = await res.blob();
-      return await new Promise((resolve, reject) => {
+    // small helper to convert blob -> dataURL
+    function blobToDataUrl(blob) {
+      return new Promise((resolve, reject) => {
         const r = new FileReader();
-        r.onloadend = () => resolve(r.result); // "data:<mime>;base64,..."
+        r.onloadend = () => resolve(r.result);
         r.onerror = reject;
         r.readAsDataURL(blob);
       });
+    }
+
+    // Basic guard: ignore inline or blob URLs (they are already embedded)
+    if (!url || url.startsWith('data:') || url.startsWith('blob:') || url.startsWith('cid:')) return null;
+
+    // Detect hosts that commonly block CORS or require auth (adjust regex as needed)
+    const likelyProtected = /googleusercontent\.com|mail\.google\.com|accounts\.google\.com/i.test(url);
+
+    // Try direct fetch for public images (fast path)
+    if (!likelyProtected) {
+      try {
+        const res = await fetch(url, { mode: 'cors' });
+        if (res.ok) {
+          const blob = await res.blob();
+          return await blobToDataUrl(blob);
+        }
+        // fall through to proxy on non-OK
+      } catch (err) {
+        // fall through to proxy
+      }
+    }
+
+    // Fallback: use your server proxy endpoint which fetches server-side and returns the image
+    try {
+      // NOTE: encodeURIComponent to safely pass the URL as a query param
+      const proxiedUrl = `/proxy-image?url=${encodeURIComponent(url)}`;
+
+      // If your proxy requires auth or special headers, use fetch options accordingly.
+      const pRes = await fetch(proxiedUrl, { mode: 'cors' });
+      if (!pRes.ok) {
+        // give up — caller will mark broken
+        return null;
+      }
+      const pBlob = await pRes.blob();
+      return await blobToDataUrl(pBlob);
     } catch (err) {
       return null;
     }
@@ -658,93 +701,129 @@ async function fileToText(file) {
 
   // Main dashboard sender
   // ----------------------
-  async function sendCampaignMain() {
-    if (!emailAddress) return alert("Please configure sender email.");
-    if (contactsList.length === 0) return alert("No recipients loaded. Import a contacts file first.");
-    if (!subject && !title) {
-      if (!confirm("No subject set. Continue?")) return;
-    }
-
-    const contacts = contactsList.map((c) => c?.email?.trim()).filter(Boolean);
-
-    const rawProvider = (document.getElementById("emailService") || {}).value || emailService || "webmail";
-    const provider = rawProvider === "smtp" ? "webmail" : rawProvider;
-    const pass = passwordService ? passwordService : undefined;
-
-    // Take the HTML directly from the editor
-    const editorHtml = getBodyHtml();
-
-    // Build a basic outgoing wrapper (server should still sanitize & inline CSS)
-    const outgoingHtml = `
-      <!doctype html>
-      <html>
-      <head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/></head>
-      <body style="margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;background:#f5f7fb;color:#222;">
-        <div style="padding:18px;background:#ffffff;">
-          <div style="border-bottom:1px solid #eee;padding-bottom:10px;margin-bottom:12px">
-            <strong style="color:#0d6efd">${escapeHtml(senderName || 'Company Name')}</strong>
-          </div>
-          ${editorHtml}
-          <div style="margin-top:18px;color:#6c757d">${escapeHtml(bestRegards || '— Team')}</div>
-        </div>
-      </body>
-      </html>
-    `;
-
-    const payload = {
-      provider,
-      user: emailAddress,
-      ...(pass ? { pass } : {}),
-      subject,
-      body: outgoingHtml,
-      contacts,
-    };
-
-    const progressWrap = document.getElementById("campaignProgress");
-    const progressText = document.getElementById("progressText");
-    const progressBar = document.getElementById("progressBar");
-    if (progressWrap) progressWrap.style.display = "block";
-    if (progressBar) {
-      progressBar.style.width = "0%";
-      progressBar.textContent = "0%";
-    }
-    if (progressText) progressText.textContent = "Sending campaign...";
-    disableControls(true);
-
-    try {
-      const res = await fetch("/api/bulkemail/campaign", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: res.statusText }));
-        throw new Error(err.error || res.statusText || "Send failed");
-      }
-
-      const json = await res.json();
-
-      if (json.total) {
-        const pct = Math.round(((json.sent || 0) / json.total) * 100);
-        if (progressBar) { progressBar.style.width = pct + "%"; progressBar.textContent = pct + "%"; }
-        if (progressText) progressText.textContent = `Sent ${json.sent || 0} / ${json.total}. Failed: ${json.failed || 0}`;
-      } else {
-        if (progressBar) { progressBar.style.width = "100%"; progressBar.textContent = "100%"; }
-        if (progressText) progressText.textContent = json.message || "Campaign accepted.";
-      }
-
-      console.log("Campaign response:", json);
-      alert("Campaign processed. See console for server response.");
-    } catch (err) {
-      console.error("Campaign error:", err);
-      console.log("Demo fallback payload:", payload);
-      alert("Demo: payload prepared. Open console (F12) to inspect object. Integrate /api/bulkemail/campaign on server to actually dispatch emails.");
-      if (progressText) progressText.textContent = "Failed to send campaign.";
-    } finally {
-      disableControls(false);
-    }
+async function sendCampaignMain() {
+  if (!emailAddress) return alert("Please configure sender email.");
+  if (contactsList.length === 0)
+    return alert("No recipients loaded. Import a contacts file first.");
+  if (!subject && !title) {
+    if (!confirm("No subject set. Continue?")) return;
   }
+
+  const contacts = contactsList.map((c) => c?.email?.trim()).filter(Boolean);
+
+  const rawProvider =
+    (document.getElementById("emailService") || {}).value ||
+    emailService ||
+    "webmail";
+  const provider = rawProvider === "smtp" ? "webmail" : rawProvider;
+  const pass = passwordService ? passwordService : undefined;
+
+  // Take the HTML directly from the editor
+  const editorHtml = getBodyHtml();
+
+  // Build a basic outgoing wrapper
+  const outgoingHtml = `
+    <!doctype html>
+    <html>
+    <head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/></head>
+    <body style="margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;background:#f5f7fb;color:#222;">
+      <div style="padding:18px;background:#ffffff;">
+        <div style="border-bottom:1px solid #eee;padding-bottom:10px;margin-bottom:12px">
+          <strong style="color:#0d6efd">${escapeHtml(senderName || "Company Name")}</strong>
+        </div>
+        ${editorHtml}
+        <div style="margin-top:18px;color:#6c757d">${escapeHtml(bestRegards || "— Team")}</div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  const payload = {
+    provider,
+    user: emailAddress,
+    ...(pass ? { pass } : {}),
+    subject,
+    body: outgoingHtml,
+    contacts,
+  };
+
+  // 🔹 ADD THIS SECTION — log payload size
+  const sizeInBytes = new Blob([JSON.stringify(payload)]).size;
+  console.log(
+    "📦 Payload size:",
+    sizeInBytes,
+    "bytes (≈",
+    (sizeInBytes / 1024 / 1024).toFixed(2),
+    "MB )"
+  );
+
+  // Optional warning if it's too large
+  if (sizeInBytes > 5 * 1024 * 1024) {
+    alert(
+      `⚠️ Your campaign payload is ${(sizeInBytes / 1024 / 1024).toFixed(
+        2
+      )} MB. This might be too large and cause a "413 Payload Too Large" error.`
+    );
+  }
+
+  // --- Continue with your progress bar logic ---
+  const progressWrap = document.getElementById("campaignProgress");
+  const progressText = document.getElementById("progressText");
+  const progressBar = document.getElementById("progressBar");
+  if (progressWrap) progressWrap.style.display = "block";
+  if (progressBar) {
+    progressBar.style.width = "0%";
+    progressBar.textContent = "0%";
+  }
+  if (progressText) progressText.textContent = "Sending campaign...";
+  disableControls(true);
+
+  try {
+    const res = await fetch("/api/bulkemail/campaign", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(err.error || res.statusText || "Send failed");
+    }
+
+    const json = await res.json();
+
+    if (json.total) {
+      const pct = Math.round(((json.sent || 0) / json.total) * 100);
+      if (progressBar) {
+        progressBar.style.width = pct + "%";
+        progressBar.textContent = pct + "%";
+      }
+      if (progressText)
+        progressText.textContent = `Sent ${json.sent || 0} / ${
+          json.total
+        }. Failed: ${json.failed || 0}`;
+    } else {
+      if (progressBar) {
+        progressBar.style.width = "100%";
+        progressBar.textContent = "100%";
+      }
+      if (progressText)
+        progressText.textContent = json.message || "Campaign accepted.";
+    }
+
+    console.log("Campaign response:", json);
+    alert("Campaign processed. See console for server response.");
+  } catch (err) {
+    console.error("Campaign error:", err);
+    console.log("Demo fallback payload:", payload);
+    alert(
+      "Demo: payload prepared. Open console (F12) to inspect object. Integrate /api/bulkemail/campaign on server to actually dispatch emails."
+    );
+    if (progressText) progressText.textContent = "Failed to send campaign.";
+  } finally {
+    disableControls(false);
+  }
+}
 
   // ----------------------
   // Widget sender (compact widget at bottom)
@@ -915,11 +994,17 @@ async function fileToText(file) {
         const rawProvider = (document.getElementById("emailService") || {}).value;
         console.log("Send Now clicked — selected provider:", rawProvider);
         emailService = rawProvider || emailService;
+        // ensure local state picks latest inputs (in case they typed then clicked)
+        senderName = (document.getElementById("senderName") || {}).value || senderName;
+        emailAddress = (document.getElementById("emailAddress") || {}).value || emailAddress;
+        passwordService = (document.getElementById("passwordService") || {}).value || passwordService;
+        subject = (document.getElementById("subject") || {}).value || subject;
+        bestRegards = (document.getElementById("bestRegards") || {}).value || bestRegards;
         sendCampaignMain();
       });
     }
 
-    // Bind widget send
+    // Bind widget send (if any)
     const widgetBtn = document.getElementById("sendCampaignBtn");
     if (widgetBtn) {
       widgetBtn.addEventListener("click", (e) => {
@@ -966,8 +1051,7 @@ async function fileToText(file) {
     renderTemplates();
     updatePreview();
   });
-</script>
-
-    <!-- ===== End widget ===== -->
+    </script>
+    <!-- ================== END SCRIPT ================== -->
   </body>
 </html>

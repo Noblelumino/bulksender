@@ -8,6 +8,7 @@ const dotenv_1 = __importDefault(require("dotenv"));
 const express_session_1 = __importDefault(require("express-session"));
 const path_1 = __importDefault(require("path"));
 const cors_1 = __importDefault(require("cors"));
+const proxyImages_1 = __importDefault(require("./routes/proxyImages")); // adjust path as needed
 const connectDb_1 = __importDefault(require("./config/connectDb"));
 const authRoutes_1 = __importDefault(require("./routes/authRoutes"));
 const dashboardRoutes_1 = __importDefault(require("./routes/dashboardRoutes"));
@@ -26,14 +27,23 @@ app.use((0, cors_1.default)({
     credentials: true,
     origin: [process.env.FRONTEND_ORIGIN || "http://localhost:3000"],
 }));
-app.use(express_1.default.json());
-app.use(express_1.default.urlencoded({ extended: true }));
+app.use(express_1.default.json({ limit: "10mb" }));
+app.use(express_1.default.urlencoded({ limit: "10mb", extended: true }));
+// Log incoming content-length for debugging 413 issues (optional — remove in production)
+app.use((req, _res, next) => {
+    const length = req.headers['content-length'];
+    if (length)
+        console.log(`📦 Incoming content-length: ${length} bytes`);
+    next();
+});
 // ✅ Sessions
 app.use((0, express_session_1.default)({
     secret: process.env.SESSION_SECRET || "secret",
     resave: false,
     saveUninitialized: true,
 }));
+// other middleware...
+app.use("/", proxyImages_1.default);
 // ✅ Make user and message available to all views
 app.use((req, res, next) => {
     var _a, _b, _c;
