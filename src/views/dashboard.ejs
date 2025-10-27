@@ -159,17 +159,8 @@
               <button id="sendBtn" class="btn btn-primary">Send Now</button>
 
               <div class="form-check d-inline-block ms-3">
-                <input
-                  class="form-check-input"
-                  type="checkbox"
-                  id="includePassword"
-                />
-                <label
-                  class="form-check-label small-muted"
-                  for="includePassword"
-                >
-                  Include password/service key with this campaign
-                </label>
+                
+              
               </div>
 
               <div
@@ -200,11 +191,19 @@
               <h6 class="fw-semibold">Sender Configuration</h6>
               <div class="row g-2 align-items-center mt-2">
                 <div class="col-sm-4">
+                  <label class="form-label">Campany Name</label>
+                  <input
+                    id="companyName"
+                    class="form-control"
+                    placeholder="Company Name"
+                  />
+                </div>
+                <div class="col-sm-4">
                   <label class="form-label">Sender Name</label>
                   <input
                     id="senderName"
                     class="form-control"
-                    placeholder="Company Name or Person"
+                    placeholder="sender name"
                   />
                 </div>
                 <div class="col-sm-4">
@@ -402,6 +401,7 @@
       // ------------------------
 
       let senderName = "";
+      let campanyName = "";
       let emailService = "";
       let emailAddress = "";
       let passwordService = "";
@@ -470,8 +470,8 @@
         const map = {
           firstName: "Friend",
           lastName: "Customer",
-          company: senderName || "Company Name",
-          companyName: senderName || "Company Name",
+          company: companyName || senderName || "Company Name",
+          companyName: companyName || senderName || "Company Name",
           email: emailAddress || "you@example.com",
         };
         let output = html;
@@ -537,15 +537,15 @@
 
         const ensureShell = (inner) =>
           `
-<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8"/>
-    <meta name="viewport" content="width=device-width,initial-scale=1"/>
-    <title>${docTitle}</title>
-  </head>
+  <!doctype html>
+  <html>
+    <head>
+      <meta charset="utf-8"/>
+      <meta name="viewport" content="width=device-width,initial-scale=1"/>
+      <title>${docTitle}</title>
+    </head>
   <body style="margin:0;padding:0;background-color:#f5f7fb;">${inner}</body>
-</html>`.trim();
+  </html>`.trim();
 
         if (hasHtmlTag || hasBodyTag || hasDoctype) {
           let output = workingHtml;
@@ -677,6 +677,10 @@
       }
 
       // Wire inputs to state
+      document.getElementById("companyName")?.addEventListener("input", (e) => {
+      companyName = e.target.value;
+      updatePreview();
+      });
       document.getElementById("senderName").addEventListener("input", (e) => {
         senderName = e.target.value;
         updatePreview();
@@ -1014,9 +1018,13 @@
           user: emailAddress,
           ...(pass ? { pass } : {}),
           subject,
+          title: title || undefined,
           body: outgoingHtml,
           contacts,
+          companyName: companyName || undefined,
+          senderName: senderName || undefined,
         };
+
 
         // 🔹 ADD THIS SECTION — log payload size
         const sizeInBytes = new Blob([JSON.stringify(payload)]).size;
@@ -1168,9 +1176,13 @@
             ...(user ? { user } : {}),
             ...(pass ? { pass } : {}),
             subject: subjectInput,
+            title: title || undefined,
             body: widgetBody,
             contacts,
+            companyName: companyName || undefined,
+            senderName: senderName || undefined,
           };
+
 
           const res = await fetch("/api/bulkemail/campaign", {
             method: "POST",
@@ -1324,6 +1336,8 @@
             console.log("Send Now clicked — selected provider:", rawProvider);
             emailService = rawProvider || emailService;
             // ensure local state picks latest inputs (in case they typed then clicked)
+            companyName =
+              (document.getElementById("companyName") || {}).value || companyName;
             senderName =
               (document.getElementById("senderName") || {}).value || senderName;
             emailAddress =

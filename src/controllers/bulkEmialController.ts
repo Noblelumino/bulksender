@@ -8,12 +8,6 @@ type Provider = "gmail" | "yahoo" | "hotmail" | "webmail" | "sendgrid";
 
 /**
  * Create transporter for the given email provider.
- * Credentials (user, pass) can come from request or environment variables.
- *
- * NOTES:
- * - For 'webmail' we prefer STARTTLS on port 587 (secure: false) and fall back to 465.
- * - Use WEBMAIL_HOST and WEBMAIL_PORT environment variables to force a specific host/port.
- * - In production turn off logger/debug and set tls.rejectUnauthorized: true
  */
 const createTransporterForProvider = (
   provider: Provider,
@@ -26,10 +20,7 @@ const createTransporterForProvider = (
         host: "smtp.gmail.com",
         port: 465,
         secure: true,
-        auth: {
-          user: user,
-          pass: pass,
-        },
+        auth: { user, pass },
       });
 
     case "yahoo":
@@ -37,10 +28,7 @@ const createTransporterForProvider = (
         host: "smtp.mail.yahoo.com",
         port: 465,
         secure: true,
-        auth: {
-          user: user,
-          pass: pass,
-        },
+        auth: { user, pass },
       });
 
     case "hotmail":
@@ -48,79 +36,70 @@ const createTransporterForProvider = (
         host: "smtp.office365.com",
         port: 587,
         secure: false,
-        auth: {
-          user: user,
-          pass: pass,
-        },
+        auth: { user, pass },
         tls: { ciphers: "TLSv1.2" },
       });
 
     case "webmail":
     default: {
-      // Preferred host/port come from env, otherwise try common defaults.
       const host =
         process.env.WEBMAIL_HOST ||
         process.env.SMTP_HOST ||
-        "mail.yourdomain.com"; // <-- replace with actual smtp host if known
+        "mail.yourdomain.com"; // update if needed
+      const port = process.env.WEBMAIL_PORT
+        ? Number(process.env.WEBMAIL_PORT)
+        : 587;
 
-      // Prefer env override for port, otherwise try 587 (STARTTLS).
-      const envPort = process.env.WEBMAIL_PORT ? Number(process.env.WEBMAIL_PORT) : undefined;
-      const defaultPort = envPort || 587;
-      const port = defaultPort;
-
-      // NOTE: logger/debug are enabled to help you see SMTP handshake and response.
-      // Turn them OFF in production (set logger: false, debug: false).
       return nodemailer.createTransport({
         host,
         port,
-        secure: port === 465, // true for 465 (SSL), false for 587 (STARTTLS)
-        auth: {
-          user: user,
-          pass: pass,
-        },
-        // Useful while debugging SMTP issues. Disable in prod.
+        secure: port === 465,
+        auth: { user, pass },
         logger: true,
         debug: true,
-        tls: {
-          // while debugging allow self-signed certs; set to true in prod
-          rejectUnauthorized: false,
-        },
+        tls: { rejectUnauthorized: false },
       });
     }
   }
 };
 
-/**
- * POST /api/bulkemail/campaign
- * Body:
- * {
- *   provider: "gmail" | "yahoo" | "hotmail" | "webmail",
- *   user: string,
- *   pass: string,
- *   subject: string,
- *   body: string,
- *   contacts: string[]
- * }
- */
+// Helper to clean up display name
+function sanitizeDisplayName(name?: unknown, maxLen = 128): string | undefined {
+  if (!name || typeof name !== "string") return undefined;
+  let s = name.trim().replace(/[\r\n]+/g, " ").replace(/\s+/g, " ");
+  if (!s) return undefined;
+  if (s.length > maxLen) s = s.slice(0, maxLen).trim();
+  s = s.replace(/"/g, '\\"');
+  return s || undefined;
+}
+
 export const sendCampaign = async (req: Request, res: Response) => {
   try {
-    // DO NOT log sensitive values (pass). Only indicate whether a password was provided.
-    const { provider, user, pass, subject, body: html, contacts } =
-      req.body as {
-        provider?: Provider;
-        user?: string;
-        pass?: string;
-        subject?: string;
-        body?: string;
-        contacts?: string[];
-      };
+    const {
+      provider,
+      user,
+      pass,
+      subject,
+      body: html,
+      contacts,
+      companyName, // supplied from dashboard
+    } = req.body as {
+      provider?: Provider;
+      user?: string;
+      pass?: string;
+      subject?: string;
+      body?: string;
+      contacts?: string[];
+      companyName?: string;
+    };
 
-    console.log("📨 Incoming campaign request:", {
+    console.log("📨 Incoming campaign:", {
       provider,
       subject,
-      contacts: Array.isArray(contacts) ? contacts.length : 0,
+      contactsCount: contacts?.length || 0,
       user,
       hasPass: !!pass,
+      hasCompanyName: !!companyName,
     });
 
     if (!subject || !html)
@@ -131,34 +110,34 @@ export const sendCampaign = async (req: Request, res: Response) => {
         .status(400)
         .json({ error: "contacts must be a non-empty array of email addresses" });
 
-    // Create transporter dynamically based on provider + credentials
-    const transporter = createTransporterForProvider((provider as Provider) || "webmail", user, pass);
+    const transporter = createTransporterForProvider(
+      (provider as Provider) || "webmail",
+      user,
+      pass
+    );
 
-    // Verify transporter to check connection and authentication
+    // Verify SMTP connection/auth
     try {
       await transporter.verify();
-      console.log(`✅ Transporter verified for ${provider || "webmail"}`);
+      console.log(`✅ SMTP verified for ${provider || "webmail"}`);
     } catch (err: any) {
-      // Log entire error object so you can see fields like `response`, `responseCode`, `command`.
-      console.error("❌ SMTP verification failed (full error):", err);
-
-      // Try to include useful info but never sensitive data
-      const details =
-        (err && err.response) ||
-        (err && err.message) ||
-        JSON.stringify({ code: err?.code, responseCode: err?.responseCode, command: err?.command });
-
+      console.error("❌ SMTP verification failed:", err);
       return res.status(502).json({
         error: "SMTP verification failed. Check credentials or provider settings.",
-        details,
+        details: err?.message || err,
       });
     }
 
-    const fromDisplay = process.env.SENDER_NAME
-      ? `"${process.env.SENDER_NAME}" <${user || process.env.SMTP_USER}>`
-      : user || process.env.SMTP_USER;
+    // companyName replaces SENDER_NAME completely
+    const sanitizedCompanyName = sanitizeDisplayName(companyName);
+    const fromAddress = (user && String(user)) || process.env.SMTP_USER || "";
 
-    const results: Array<any> = [];
+    // Build from header
+    const fromDisplay = sanitizedCompanyName
+      ? `"${sanitizedCompanyName}" <${fromAddress}>`
+      : fromAddress;
+
+    const results: any[] = [];
 
     for (const to of contacts) {
       try {
@@ -173,28 +152,24 @@ export const sendCampaign = async (req: Request, res: Response) => {
           to,
           ok: true,
           messageId: info.messageId,
-          accepted: (info as any).accepted || [],
+          accepted: info.accepted || [],
         });
       } catch (err: any) {
-        // Log the full error (no passwords) for each recipient failure
-        console.error(`Failed for ${to} (full error):`, err);
+        console.error(`❌ Failed for ${to}:`, err.message);
         results.push({
           to,
           ok: false,
-          error: err && err.message ? err.message : err,
-          // optionally include err.responseCode/command for debugging:
-          code: err?.code,
-          responseCode: err?.responseCode,
+          error: err.message || "Unknown error",
         });
       }
     }
 
-    return res.json({ provider, results });
+    return res.json({ provider, from: fromDisplay, results });
   } catch (err: any) {
-    console.error("sendCampaign error (full):", err);
+    console.error("sendCampaign error:", err);
     return res.status(500).json({
       error: "Internal server error",
-      details: err && err.message ? err.message : err,
+      details: err?.message || err,
     });
   }
 };
