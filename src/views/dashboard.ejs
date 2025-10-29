@@ -96,6 +96,11 @@
             <li class="nav-item">
               <a class="nav-link" href="#bulk">Bulk Sender</a>
             </li>
+            <% if (user && user.role === "admin") { %>
+            <li class="nav-item">
+              <a class="nav-link" href="/adminDashboard">Admin</a>
+            </li>
+            <% } %>
           </ul>
         </div>
       </div>
